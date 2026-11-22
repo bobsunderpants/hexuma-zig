@@ -94,4 +94,7 @@ return {
     [4] = ".",
     [5] = "und ",
   },
+  dispatch = {
+    [0] = "Keine Action programmiert für diesen Raum",
+  },
 }

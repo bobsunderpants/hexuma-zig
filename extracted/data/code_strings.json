@@ -95,6 +95,9 @@
       {"key":"inventory.3","text":"nichts."},
       {"key":"inventory.4","text":"."},
       {"key":"inventory.5","text":"und "}
+    ]},
+    {"name":"dispatch","segment":4508,"offset":0,"messages":[
+      {"key":"dispatch.0","text":"Keine Action programmiert für diesen Raum"}
     ]}
   ]
 }
