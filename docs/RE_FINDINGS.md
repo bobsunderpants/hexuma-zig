@@ -317,10 +317,12 @@ state. Detailed evidence: `docs/reports/save-format.md`.
   and the `0x404` graphics-driver block are opaque to the Zig state model.
 - Overlay rules are verified against static decompilation and targeted CLI
   probes; full DOSBox action-by-action parity remains an open validation task.
-  `scripts/dosbox_parity.sh` records the Zig side of a command sequence, but
-  this X session leaves every DOSBox window `IsUnMapped`/`_NET_WM_STATE_HIDDEN`,
-  so the script now reports a missing original screenshot instead of silently
-  claiming parity.
+  `scripts/dosbox_parity.sh` now captures original frames reliably under KDE
+  Wayland by forcing `SDL_VIDEODRIVER=x11`; without it SDL2 creates a native
+  Wayland window whose Xwayland shadow is `IsUnMapped`/`_NET_WM_STATE_HIDDEN`.
+  The harness selects the viewable window owned by its own DOSBox PID, queues
+  all AUTOTYPE input before the blocking `hexuma.bat`, and waits for queued
+  input before testing frame stability.
 - Font glyph metrics are unresolved, and several flag mutators
   (`0x5e31`, `0x5fab`, `0x6029`, `0x604b`, `0x4b9a`, `0x4a62`, `0xb894`,
   `0x6bc4`) are still tracked as live state without a decoded writer.

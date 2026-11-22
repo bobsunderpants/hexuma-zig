@@ -9,7 +9,7 @@ under `/tmp/opencode/`. The original game directory
 
 | Item | Observation |
 |---|---|
-| Display | `DISPLAY=:1`, Xorg + KWin, root `1774x1198`, 24 bpp |
+| Display | `DISPLAY=:1` is KDE KWin's rootless Xwayland display (`XDG_SESSION_TYPE=wayland`), root `1774x1198`, 24 bpp |
 | X extensions | `XTEST` and `XInputExtension` present (`xdpyinfo -queryExtensions`) |
 | Emulators | `/usr/bin/dosbox` = Debian `0.75~svn4494`; `/usr/bin/dosbox-x` = `2026.08.31` SDL2 64-bit |
 | Image tools | ImageMagick `7.1.2-34`: `import`, `convert`, `compare`, `identify` all work |
@@ -23,7 +23,14 @@ even with `-screen`. Capture a specific window ID instead; that works reliably.
 
 Plain `dosbox` also needs `SDL_VIDEODRIVER=x11` explicitly here. Without it,
 SDL chooses a non-X backend (EGL warnings, process runs but no X window appears).
-DOSBox-X works with `[sdl] videodriver=x11` in its config.
+DOSBox-X usually works with `[sdl] videodriver=x11` in its config, but under the
+current KDE Wayland session that setting is not enough: SDL2 can still select
+its native Wayland backend. A native Wayland DOSBox window never appears in
+Xwayland's `_NET_CLIENT_LIST`, and the stale X11 windows left behind are
+`IsUnMapped` with `_NET_WM_STATE_HIDDEN`, so `import -window` cannot capture.
+The reliable fix is to set `SDL_VIDEODRIVER=x11` in the launch environment too.
+`scripts/dosbox_parity.sh` now does this and also requires `_NET_WM_PID` to
+match the DOSBox PID it launched, so stale windows cannot be captured.
 
 ## 2. Launching the game
 
@@ -80,7 +87,7 @@ hexuma.bat
 Launch:
 
 ```sh
-DISPLAY=:1 SDL_AUDIODRIVER=dummy \
+DISPLAY=:1 SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy \
   dosbox-x -conf /tmp/opencode/hexuma-harness.conf -time-limit 600
 ```
 
@@ -306,3 +313,38 @@ Practical parity strategy:
   direct pixel-diff parity; semantic comparison is the realistic goal.
 * Plain DOSBox has no AUTOTYPE and was verified only with XTest-style or manual
   input; DOSBox-X is the better base for scripted parity runs.
+
+## 8. Wayland/Xwayland capture fix in `scripts/dosbox_parity.sh`
+
+The earlier failure was not a DOSBox rendering problem. The session is KDE
+Wayland, and `DISPLAY=:1` is KWin's rootless Xwayland display. DOSBox-X's
+`[sdl] videodriver=x11` config line did not prevent SDL2 from choosing its
+native Wayland backend; the visible game window then never appeared in
+Xwayland's `_NET_CLIENT_LIST`. The X windows that the harness found were stale
+windows from previous runs, reported by `xwininfo` as `IsUnMapped` and by
+`xprop` as `_NET_WM_STATE_HIDDEN`, so `import -window` could not read them.
+
+Fix applied to the harness:
+
+* launch with `SDL_VIDEODRIVER=x11` in the environment, in addition to the
+  config setting, so DOSBox-X creates a real Xwayland window;
+* require `_NET_WM_PID` to equal the PID launched by the harness, so stale
+  hidden or viewable windows cannot be captured;
+* discard windows with `_NET_WM_STATE_HIDDEN` and require `Map State:
+  IsViewable` before calling `import`;
+* queue all `AUTOTYPE` lines before `hexuma.bat` (lines after it run only if
+  the game exits) and wait for the cumulative `-w` delay before judging frame
+  stability.
+
+Verified after the fix:
+
+```sh
+./scripts/dosbox_parity.sh /tmp/opencode/parity-final "" "untersuche kamin;gehe rauf" ""
+# original screenshot: /tmp/opencode/parity-final/original.png (ok)
+```
+
+The captured frame is 320x200 with `Map State: IsViewable`. With queued input,
+e.g. `-w 3 enter`, it is a 144-color gameplay frame rather than the 20-color
+intro frame. This establishes a reliable original-frame capture path; mapping
+specific typed game commands to original actions remains a separate RE/input
+task.

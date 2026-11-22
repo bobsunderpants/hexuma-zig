@@ -11,9 +11,11 @@
 #   scripts/dosbox_parity.sh OUT_DIR "PRE_AUTOTYPE" "zig commands" "POST_AUTOTYPE"
 #
 # Both AUTOTYPE arguments use DOSBox-X syntax; separate multiple invocations
-# with '|'. PRE_AUTOTYPE runs before hexuma.bat (useful for startup keys).
-# POST_AUTOTYPE runs after it, so commands are typed into the running game, e.g.
-#   "-w 8 enter" "" "-w 3 -p 0.1 untersuche enter"
+# with '|'. PRE_AUTOTYPE is queued first, POST_AUTOTYPE second; both are placed
+# before hexuma.bat because [autoexec] lines after a blocking game never run.
+# The -w values are cumulative waits from launch, e.g.
+#   "-w 3 enter" "" "-w 4 -p 0.1 untersuche space kamin enter"
+# CAPTURE_WAIT can override the automatic post-injection wait in seconds.
 set -euo pipefail
 
 OUT_DIR="${1:?output directory required}"
@@ -52,6 +54,15 @@ if [ -n "$POST_AUTOTYPE_ARGS" ]; then
   for part in "${parts[@]}"; do
     [ -n "$part" ] && post_autotype_lines+="autotype ${part}"$'\n'
   done
+fi
+
+# All scripted input must be queued before HEXPRG starts: [autoexec] is
+# sequential, so lines placed after hexuma.bat run only if the game exits.
+capture_wait="${CAPTURE_WAIT:-}"
+if [ -z "$capture_wait" ]; then
+  capture_wait="$(printf '%s\n%s\n' "$autotype_lines" "$post_autotype_lines" \
+    | awk '{ for (i = 1; i < NF; i++) if ($i == "-w") sum += $(i + 1) + 0 }
+           END { printf "%.2f", sum + 1.0 }')"
 fi
 
 cat > "$CONF" <<EOF
@@ -97,15 +108,18 @@ logfile=$LOG
 mount c $SCRATCH
 c:
 $autotype_lines
-hexuma.bat
 $post_autotype_lines
+hexuma.bat
 EOF
 
 find_window() {
-  local id cls state
+  local want_pid="${1:-}"
+  local id cls state pid
   # DOSBox-X recreates its X window on video-mode changes, and failed runs can
   # leave hidden stale windows in the EWMH client list. Only a viewable DOSBox
   # window can be captured with `import -window`; older ones give BadMatch.
+  # Prefer the window owned by this harness, because a stale viewable DOSBox
+  # window from another run would otherwise be captured by mistake.
   for id in $(DISPLAY="$DISPLAY_NUM" xprop -root _NET_CLIENT_LIST 2>/dev/null \
               | sed -n 's/.*# \(0x[0-9a-f]*\).*/\1/p'); do
     cls="$(DISPLAY="$DISPLAY_NUM" xprop -id "$id" WM_CLASS 2>/dev/null || true)"
@@ -113,6 +127,11 @@ find_window() {
       *DOSBox*|*dosbox*) ;;
       *) continue ;;
     esac
+    if [ -n "$want_pid" ]; then
+      pid="$(DISPLAY="$DISPLAY_NUM" xprop -id "$id" _NET_WM_PID 2>/dev/null \
+             | sed -n 's/.*= *\([0-9][0-9]*\).*/\1/p' | head -1)"
+      [ "$pid" = "$want_pid" ] || continue
+    fi
     state="$(DISPLAY="$DISPLAY_NUM" xprop -id "$id" _NET_WM_STATE 2>/dev/null || true)"
     case "$state" in *_NET_WM_STATE_HIDDEN*) continue ;; esac
     if DISPLAY="$DISPLAY_NUM" xwininfo -id "$id" 2>/dev/null \
@@ -121,28 +140,37 @@ find_window() {
       return 0
     fi
   done
-  DISPLAY="$DISPLAY_NUM" xwininfo -root -tree 2>/dev/null \
-    | grep -iE 'dosbox' | head -1 | sed -n 's/^ *\(0x[0-9a-f]*\).*/\1/p' || true
   return 0
 }
 
-DISPLAY="$DISPLAY_NUM" SDL_AUDIODRIVER=dummy \
+# Under KDE Wayland, SDL2 can choose its native Wayland backend even though the
+# config asks for X11. Native Wayland windows never appear in Xwayland's client
+# list, and their X11 shadow windows are unmapped/hidden. Force SDL's X11
+# backend so DOSBox-X creates a real Xwayland window that xwininfo/import can
+# see and capture. Without this, every frame is indistinguishable from a stale
+# hidden window and the harness reports "no viewable DOSBox window".
+DISPLAY="$DISPLAY_NUM" SDL_VIDEODRIVER=x11 SDL_AUDIODRIVER=dummy \
   dosbox-x -conf "$CONF" -time-limit 600 >"$OUT_DIR/dosbox-stdout.txt" 2>&1 &
 emu_pid=$!
 
 window=""
 for _ in $(seq 1 60); do
   kill -0 "$emu_pid" 2>/dev/null || break
-  window="$(find_window)"
+  window="$(find_window "$emu_pid")"
   [ -n "$window" ] && break
   sleep 0.25
 done
+
+if awk -v w="$capture_wait" 'BEGIN { exit !((w + 0) > 0) }'; then
+  echo "waiting ${capture_wait}s for queued AUTOTYPE input"
+  sleep "$capture_wait"
+fi
 
 # Capture until two consecutive frames are effectively identical.
 prev=""
 stable=0
 for _ in $(seq 1 24); do
-  window="$(find_window)"
+  window="$(find_window "$emu_pid")"
   [ -z "$window" ] && break
   DISPLAY="$DISPLAY_NUM" import -silent -window "$window" "$OUT_DIR/original.png" 2>/dev/null || true
   [ -s "$OUT_DIR/original.png" ] || break
@@ -173,7 +201,7 @@ if [ -s "$OUT_DIR/original.png" ]; then
     >"$OUT_DIR/original-info.txt" 2>/dev/null || true
   capture_status="ok"
 else
-  echo 'warning: no viewable DOSBox window was captured' >&2
+  echo 'warning: no viewable DOSBox window was captured; check DISPLAY and SDL_VIDEODRIVER=x11' >&2
 fi
 
 if [ -n "$ZIG_COMMANDS" ] && [ -x "$ROOT/zig-out/bin/hexuma" ]; then
