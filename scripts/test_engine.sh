@@ -9,10 +9,19 @@ run() {
   printf '%s\nquit\n' "$1" | "$BIN" play --extracted "$EXTRACTED" "${@:2}"
 }
 
-# German original vocabulary path.
+# German original vocabulary path. REA shows room 1's LAND record is
+# (1,0,-18,-2,-3,6,0): south/east/west are closed (-), while up is a positive
+# exit. A negative exit keeps the room unchanged; the overlay message is still
+# appended. Verify both the raw exit list and a real positive movement.
 out="$(run 'gehe süden' --choices)"
-grep -q 'Du gehst süden' <<<"$out"
-grep -q 'Gehe nach Norden ins Haus' <<<"$out"
+grep -q 'Ausgang: süden osten westen rauf' <<<"$out"
+grep -q 'Mitten auf dem Boden liegt ein Zettel' <<<"$out"
+if grep -q 'Du gehst süden' <<<"$out"; then
+  echo 'negative LAND exit incorrectly travelled' >&2
+  exit 1
+fi
+out="$(run 'gehe rauf' --choices)"
+grep -q 'Du gehst rauf' <<<"$out"
 
 # REA-derived VORS runtime overrides are applied to the start screen.
 out="$(run 'untersuche kamin' --choices)"
@@ -35,6 +44,10 @@ grep -q 'haustüre ist bereits offen.' <<<"$out"
 grep -q 'haustüre ist jetzt zu.' <<<"$out"
 grep -q 'haustüre ist bereits zu.' <<<"$out"
 grep -q 'kamin kann man nicht öffnen.' <<<"$out"
+# Closing the front door negates LAND word 2, opening the south exit to room 18.
+out="$(printf 'schließe haustüre\ngehe süden\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
+grep -q 'haustüre ist jetzt zu.' <<<"$out"
+grep -q 'Du gehst süden.' <<<"$out"
 
 # Original OBNWOR/TEXT*.REL description is used for German lookups.
 out="$(run 'untersuche gemälde')"
@@ -51,9 +64,8 @@ grep -q 'haustüre ist jetzt zu.' <<<"$out"
 grep -q 'Ein ist zu.' <<<"$out"
 
 # English alternative path uses the same verb ids and original VORS labels.
-out="$(run 'go south' --lang en --choices)"
-grep -q 'You go south' <<<"$out"
-grep -q 'Go North into the House' <<<"$out"
+out="$(run 'go up' --lang en --choices)"
+grep -q 'You go up' <<<"$out"
 
 # Point-and-click labels and the text parser share one dispatcher.
 out="$(run '1' --lang en --choices)"
@@ -114,6 +126,27 @@ out="$("$BIN" rules --room 170 --verb 3 --object 0 --flag 0xf428=1 --flag 0xf427
 grep -q 'msg 0x77ab' <<<"$out"
 out="$("$BIN" rules --room 170 --verb 1 --object 592 --flag 0xf42b=1 --extracted "$EXTRACTED")"
 grep -q 'msg 0x88c3' <<<"$out"
+# Rooms outside every compiled overlay unit use the main dispatcher tail string.
+out="$("$BIN" rules --room 25 --verb 3 --object 0 --extracted "$EXTRACTED")"
+grep -q 'allowed=no' <<<"$out"
+grep -q 'Keine Action programmiert für diesen Raum' <<<"$out"
+# Room 1's 0x8a message is driven by the OVR counter increment, so setting the
+# counter to 4 up front would skip it. Verify the startup path instead.
+out="$("$BIN" rules --room 1 --verb 3 --object 0 --extracted "$EXTRACTED")"
+grep -q 'msg 0x8a' <<<"$out"
+# Rooms 17 and 26 reach main-module dispatcher 0x13e7d, not the fallback string.
+# First entry into room 17 runs the inline 0xf330 state machine and returns
+# TEXT 0x67f before the dispatcher; later entries continue to the dispatcher.
+out="$("$BIN" rules --room 17 --verb 1 --object 424 --extracted "$EXTRACTED")"
+grep -q 'msg early: Schon wenige Augenblicke später' <<<"$out"
+out="$("$BIN" rules --room 17 --verb 1 --object 424 --flag 0xf330=3 --extracted "$EXTRACTED")"
+grep -q 'allowed=yes' <<<"$out"
+out="$("$BIN" rules --room 26 --verb 3 --object 0 --extracted "$EXTRACTED")"
+grep -q 'allowed=yes' <<<"$out"
+# Top-guard object 0x24a switches the text segment and emits TEXT id 0x8e
+# before the room's normal overlay rules.
+out="$("$BIN" rules --room 170 --verb 3 --object 586 --extracted "$EXTRACTED")"
+grep -q 'msg early: trägt. Oben steht' <<<"$out"
 
 # Portable save/load state.
 save="$(mktemp)"
@@ -130,5 +163,10 @@ printf 'nimm wand\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$origi
 test "$(wc -l < "$original_dir/00.dat")" -eq 10839
 test "$(stat -c%s "$original_dir/00.sav")" -eq 7388
 printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$original_dir/00.dat" >/dev/null
+# The .dat writer must serialise the live mutable LAND state, not the initial
+# asset table: closing the front door changes room 1 word 2 from -18 to 18.
+printf 'schließe haustüre\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$original_dir/01.dat" >/dev/null
+test "$(sed -n '3p' "$original_dir/01.dat")" -eq 18
+printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$original_dir/01.dat" >/dev/null
 
 echo 'engine tests passed'

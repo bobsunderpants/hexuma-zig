@@ -102,13 +102,24 @@ $post_autotype_lines
 EOF
 
 find_window() {
-  local id cls
+  local id cls state
+  # DOSBox-X recreates its X window on video-mode changes, and failed runs can
+  # leave hidden stale windows in the EWMH client list. Only a viewable DOSBox
+  # window can be captured with `import -window`; older ones give BadMatch.
   for id in $(DISPLAY="$DISPLAY_NUM" xprop -root _NET_CLIENT_LIST 2>/dev/null \
               | sed -n 's/.*# \(0x[0-9a-f]*\).*/\1/p'); do
     cls="$(DISPLAY="$DISPLAY_NUM" xprop -id "$id" WM_CLASS 2>/dev/null || true)"
     case "$cls" in
-      *DOSBox*|*dosbox*) echo "$id"; return 0 ;;
+      *DOSBox*|*dosbox*) ;;
+      *) continue ;;
     esac
+    state="$(DISPLAY="$DISPLAY_NUM" xprop -id "$id" _NET_WM_STATE 2>/dev/null || true)"
+    case "$state" in *_NET_WM_STATE_HIDDEN*) continue ;; esac
+    if DISPLAY="$DISPLAY_NUM" xwininfo -id "$id" 2>/dev/null \
+       | grep -q 'Map State: IsViewable'; then
+      echo "$id"
+      return 0
+    fi
   done
   DISPLAY="$DISPLAY_NUM" xwininfo -root -tree 2>/dev/null \
     | grep -iE 'dosbox' | head -1 | sed -n 's/^ *\(0x[0-9a-f]*\).*/\1/p' || true
@@ -156,8 +167,14 @@ sleep 1
 kill -9 "$emu_pid" 2>/dev/null || true
 wait "$emu_pid" 2>/dev/null || true
 
-identify -format '%f %wx%h colors=%k mean=%[fx:mean]\n' "$OUT_DIR/original.png" \
-  >"$OUT_DIR/original-info.txt" 2>/dev/null || true
+capture_status="missing"
+if [ -s "$OUT_DIR/original.png" ]; then
+  identify -format '%f %wx%h colors=%k mean=%[fx:mean]\n' "$OUT_DIR/original.png" \
+    >"$OUT_DIR/original-info.txt" 2>/dev/null || true
+  capture_status="ok"
+else
+  echo 'warning: no viewable DOSBox window was captured' >&2
+fi
 
 if [ -n "$ZIG_COMMANDS" ] && [ -x "$ROOT/zig-out/bin/hexuma" ]; then
   {
@@ -170,6 +187,6 @@ if [ -n "$ZIG_COMMANDS" ] && [ -x "$ROOT/zig-out/bin/hexuma" ]; then
   } >"$OUT_DIR/zig-output.txt" 2>&1
 fi
 
-echo "original screenshot: $OUT_DIR/original.png"
+echo "original screenshot: $OUT_DIR/original.png ($capture_status)"
 echo "zig text output:    $OUT_DIR/zig-output.txt"
 echo "dosbox log:         $LOG"

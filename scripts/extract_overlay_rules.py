@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Convert REA/Ghidra decompiled overlay entry routines into a compact rule set.
+"""Convert REA/Ghidra decompiled room-action routines into a compact rule set.
 
 The Turbo Pascal overlay stubs in HEXPRG.EXE are real INT 3F dispatch vectors.
 Each of the eleven overlaid units exports one room-action routine from
-HEXUMA.OVR.  This script reads the clean entry decompilations produced from the
-unit code slices and turns their condition chains into JSON rules consumed by
-the Zig runtime.  The output is evidence-derived data, not final source code.
+HEXUMA.OVR.  Rooms 17 and 26 are dispatched instead to a main-module routine at
+0x13e7d after inline prelude state machines.  This script reads the clean entry
+decompilations produced from the unit code slices plus that main dispatcher and
+turns their condition chains into JSON rules consumed by the Zig runtime.  The
+output is evidence-derived data, not final source code.
 """
 from __future__ import annotations
 
@@ -52,6 +54,10 @@ SPECIAL_NAMES = {
     "DAT_1000_cae4": "score",
     "_DAT_1000_c918": "scene",
     "DAT_1000_c918": "scene",
+    # Ghidra mis-decodes the word table read at assembly 0x1561e
+    # (OBNINT.field_b indexed by object id) as a RAM symbol. The original
+    # guard is `room == field_b(object)`.
+    "uRam000146c0": "object_gate",
 }
 
 
@@ -732,15 +738,43 @@ def parse_room_ranges(spec: str) -> List[List[int]]:
     return ranges
 
 
+def scan_memory_addresses(path: str) -> set:
+    """Hex addresses that occur in dereference expressions of a decompilation."""
+    found = set()
+    with open(path, encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            if "*(" not in line:
+                continue
+            for m in re.finditer(r"0x([0-9a-fA-F]{4,6})", line):
+                value = int(m.group(1), 16)
+                if 0x1000 <= value <= 0xffff:
+                    found.add(value)
+    return found
+
+
+def scan_overlay_dat_addresses(path: str) -> set:
+    with open(path, encoding="utf-8", errors="ignore") as f:
+        return {int(m.group(1), 16) for m in re.finditer(r"\b_?DAT_1000_([0-9a-fA-F]{4,6})\b", f.read())}
+
+
 def main() -> int:
     root = sys.argv[1] if len(sys.argv) > 1 else "/tmp/opencode/ovr-entry-only"
     out_path = sys.argv[2] if len(sys.argv) > 2 else "extracted/data/overlay_rules.json"
+    main_root = sys.argv[3] if len(sys.argv) > 3 else "/tmp/opencode/hexuma-decompiled/functions"
+    main_addresses = set()
+    if os.path.isdir(main_root):
+        for name in os.listdir(main_root):
+            if name.endswith(".c"):
+                main_addresses |= scan_memory_addresses(os.path.join(main_root, name))
+
     units = []
+    overlay_dat_addresses = set()
     for i in range(11):
         cpath = os.path.join(root, f"{i}-dec", "functions", "0x10100.c")
         if not os.path.exists(cpath):
             print(f"missing {cpath}", file=sys.stderr)
             return 1
+        overlay_dat_addresses |= scan_overlay_dat_addresses(cpath)
         ex = RuleExtractor(i)
         ex.walk_block(function_body(cpath), true_expr(), {})
         units.append({
@@ -750,11 +784,49 @@ def main() -> int:
             "source": cpath,
             "rules": ex.rules,
         })
+
+    # Rooms 17 and 26 reach the main-module dispatcher at 0x13e7d rather than
+    # an overlay unit. Its decompiled condition chain has the same action
+    # vocabulary, so it is emitted as one additional room-ranged rule block.
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    main_dispatch_path = (
+        sys.argv[4]
+        if len(sys.argv) > 4
+        else os.path.join(
+            repo_root, "docs", "reports", "HEXPRG_0x13e7d_pseudocode.c"
+        )
+    )
+    if os.path.exists(main_dispatch_path):
+        ex = RuleExtractor(11)
+        ex.walk_block(function_body(main_dispatch_path), true_expr(), {})
+        units.append({
+            "unit": 11,
+            "rooms": "17,26",
+            "room_ranges": [[17, 17], [26, 26]],
+            "source": main_dispatch_path,
+            "rules": ex.rules,
+        })
+    else:
+        print(f"missing {main_dispatch_path}", file=sys.stderr)
+
+    # DAT_1000_xxxx symbols not referenced by the load module live in each
+    # overlay unit's own data area. Keep them out of the main global state.
+    local_addresses = sorted(overlay_dat_addresses - main_addresses)
+    payload = json.dumps({
+        "source": "REA/Ghidra decompiled HEXUMA.OVR entry routines and main dispatcher 0x13e7d",
+        "local_addresses": local_addresses,
+        "units": units,
+    }, ensure_ascii=False, separators=(",", ":")) + "\n"
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"source": "REA/Ghidra decompiled HEXUMA.OVR entry routines", "units": units}, f, ensure_ascii=False, separators=(",", ":"))
-        f.write("\n")
+        f.write(payload)
+    # The extractor embeds this table so a fresh extraction is playable; keep
+    # the embedded copy in sync with the runtime copy under extracted/.
+    mirror_path = os.path.join(repo_root, "src", "data", "overlay_rules.json")
+    if os.path.abspath(out_path) != os.path.abspath(mirror_path):
+        with open(mirror_path, "w", encoding="utf-8") as f:
+            f.write(payload)
     total = sum(len(u["rules"]) for u in units)
-    print(f"wrote {out_path}: {total} rules")
+    print(f"wrote {out_path}: {total} rules, {len(local_addresses)} overlay-local addresses")
     return 0
 
 

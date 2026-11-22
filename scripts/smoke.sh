@@ -29,6 +29,7 @@ test -s "$OUT/data/texts.json"
 test -s "$OUT/data/code_strings.json"
 test -s "$OUT/data/action_menu.json"
 test -s "$OUT/data/overlays.json"
+test -s "$OUT/data/overlay_rules.json"
 test -s "$OUT/data/initial_flags.json"
 test -s "$OUT/data/vors_overrides.json"
 test -s "$OUT/data/vors_records.json"
@@ -91,6 +92,17 @@ PY
 
 "$ROOT/zig-out/bin/hexuma" overlays --room 1 --extracted "$OUT" | grep -qx 'fr00101.seq'
 "$ROOT/zig-out/bin/hexuma" overlays --room 1 --extracted "$OUT" | grep -qx 'fr00107.seq'
+
+python3 - "$OUT/data/overlay_rules.json" <<'PY'
+import json, sys
+rules = json.load(open(sys.argv[1], encoding="utf-8"))
+units = {u["unit"]: u for u in rules["units"]}
+assert len(units) == 12
+assert sum(len(u["rules"]) for u in rules["units"]) == 6950
+assert units[11]["room_ranges"] == [[17, 17], [26, 26]]
+assert "object_gate" in json.dumps(units[11]["rules"])
+PY
+"$ROOT/zig-out/bin/hexuma" rules --room 26 --verb 3 --object 0 --extracted "$OUT" | grep -q 'allowed=yes'
 
 python3 - "$OUT/data/vors_overrides.json" "$OUT/data/vors_records.json" <<'PY'
 import json, sys

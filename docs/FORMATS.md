@@ -148,27 +148,31 @@ keyed by the original id. `HEXUMA.OVR` remains a conservative printable-run
 scanner; it is not a complete bytecode interpreter.
 
 In-code German parser messages are separate Pascal-string chains in
-`HEXPRG.EXE`. The extractor decodes nine pools (`take`, `parser`, `examine`,
-`move`, `door`, `ignite`, `openclose`, `drop`, `inventory`) into
+`HEXPRG.EXE`. The extractor decodes ten pools (`take`, `parser`, `examine`,
+`move`, `door`, `ignite`, `openclose`, `drop`, `inventory`, `dispatch`) into
 `data/code_strings.json` and `lua/code_strings.lua`. A pool pointer
 `segment:offset` maps to file offset `segment * 16 + offset - 0x9a00`. These
 fragments, not approximations, are used by the reconstructed verb handlers.
 
 ## `.BIN` tables
 
-- `OBNINT*.BIN`: 1060 × 4 bytes = two `i16` values per noun. The second value
-  (`room_gate`) is the room/visibility gate; a negative value aliases another
-  noun id, and `0xffff` is globally visible.
-- `OBNBYT*.BIN`: 1060 × 3 bytes of object-class flags; emitted verbatim as
-  `class` in the semantic vocabulary.
+- `OBNINT*.BIN`: 1060 × 4 bytes = two little-endian `i16` values per noun. The
+  second value (`room_gate`) is the room/visibility gate; a negative value aliases
+  another noun id, and `0xffff` is globally visible. The generated JSON renders
+  bytes in file order, so `"0300"` is the value `3`. The first value (`field_a`)
+  is the 1-based LAND loader slot; the live file-word column is `field_a - 1`.
+- `OBNBYT*.BIN`: 1060 × 3 bytes; the first byte array at file index `id - 1` is
+  the original class byte emitted as `class` in the semantic vocabulary.
 - `OBNWOR*.BIN`: 1060 × 4 bytes = two `u16` 1-based `TEXT*.REL` ids (`text_a`,
   `text_b`).
-- `LAND.BIN`: 240 × 14 bytes = seven `i16` values, emitted as the `rooms` exit
-  table.
+- `LAND.BIN`: 240 × 14 bytes = seven `i16` values. File word 0 is the room id;
+  words 1..6 are the directional exits. The loader converts file word `j` to
+  loader slot `j + 1`; negative exits are closed doors and are not travel
+  targets.
 - `OBLISTE.BIN`, `VORS.BIN`: emitted as `u16-le` arrays, plus decoded VORS
   hotspot records.
 
-Some field meanings (especially the exact object-class taxonomy and
+Some field meanings (especially the exact object-class taxonomy and most
 `OBNINT.field_a` state uses) remain unresolved; raw values are preserved.
 
 ## `HEXUMA.OVR`
@@ -187,10 +191,12 @@ The extractor scans plausible length prefixes, converts to UTF-8, and writes
 
 `data/game.json` and `lua/game.lua` are derived from the raw tables:
 
-- `LAND.BIN` → 240 rooms with six exits: `north`, `south`, `east`, `west`,
-  `up`, `down`. The original seven-i16 record is preserved as `id` plus exits.
-  Exit sign is retained (negative values are common); the engine currently uses
-  the absolute value as the destination room.
+- `LAND.BIN` → 240 rooms with six exits indexed by 0-based file words `1..6`.
+  The engine retains the sign: a positive value is the destination room, `0`
+  emits TEXT id `0x61`, and a negative value leaves the player in place and is
+  silent unless a matching class-4 door object exists, in which case TEXT id
+  `0x3c` is emitted. Room 1's record `(1,0,-18,-2,-3,6,0)` makes south closed and
+  up traversable.
 - `VERBEN.SEQ` → 346 verb name/id pairs.
 - `OBW.SEQ` / `OBNINT.BIN` / `OBNBYT.BIN` / `OBNWOR.BIN` → 1026 base vocabulary
   entries with `id`, `group`, `prop`, `room_gate`, `class`, `text_a`, `text_b`.
@@ -204,8 +210,15 @@ The extractor scans plausible length prefixes, converts to UTF-8, and writes
   original Pascal string is empty or a single space (see below).
 - `HEXUMA.OVR` compiled units → `data/overlay_rules.json`, 6,183 structured
   room/action rules with numeric `room_ranges` derived from the main dispatch
-  at `0x11d46`. Guards and actions are AST nodes; the runtime parser is
-  `src/overlay_rules.zig` and the evaluator is `src/overlay_eval.zig`.
+  at `0x11d46`. A twelfth rule block (`unit: 11`) comes from the main-module
+  dispatcher at `0x13e7d` and covers only rooms 17 and 26, for a total of 6,950
+  rules. Guards and actions are AST nodes; the runtime parser is
+  `src/overlay_rules.zig` and the evaluator is `src/overlay_eval.zig`. The
+  generated JSON is mirrored as `src/data/overlay_rules.json` for embedding, so
+  `hexuma extract --input <original> --output <dir>` also writes a playable
+  `data/overlay_rules.json`. Overlay fixup tables mark far-pointer segment words
+  whose stored values are already absolute in the extracted code, so static rule
+  extraction does not need a runtime relocation pass.
 
 This layer is locale-independent. German labels come from the shipped tables;
 English labels are authored in `src/locale_data.zig` and emitted as
@@ -254,10 +267,12 @@ tooltips, OBLISTE supplies the text-command menu. Both are exposed by
 Each decoded image also gets an `images/<name>.raw` file:
 
 ```text
-0    6 bytes   "HXRAW1"
-6    u16 LE    width
-8    u16 LE    height
-10   u8[]      BGRA pixels (4 bytes per pixel)
+0    6 bytes   "HXRAW2"
+6    u16 LE    x
+8    u16 LE    y
+10   u16 LE    width
+12   u16 LE    height
+14   u8[]      BGRA pixels (4 bytes per pixel)
 ```
 
 BGRA order matches a little-endian TrueColor visual. The GUI fits the picture
@@ -272,7 +287,9 @@ two-file save state:
   order of the 395 static call sites of `FUN_1d0d_0030` (`0x2d100`). Loops
   expand to 8 lines per landscape, 8 lines per object (7 numeric plus one
   Pascal string), and 50 inventory-name strings. Field descriptors live in
-  `src/data/save_layout.json`.
+  `src/data/save_layout.json`. Landscape words are taken from the live mutable
+  LAND table, so door state changes are saved; known 16-bit globals are written
+  as words.
 - `NN.sav`: `0x18d8` bytes of sampled VRAM plus a `0x404`-byte graphics-state
   block (7,388 bytes). The thumbnail is zeroed in the Zig frontend because no
   VGA framebuffer is available.

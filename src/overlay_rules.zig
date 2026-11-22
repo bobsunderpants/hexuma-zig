@@ -63,11 +63,41 @@ pub const Unit = struct {
 pub const Database = struct {
     arena: *std.heap.ArenaAllocator,
     units: []Unit,
+    /// DAT symbols that belong to an overlay unit's own data segment rather
+    /// than to the main module's global state. Sorted ascending for lookup.
+    local_addresses: []i64,
 
     pub fn deinit(self: *Database) void {
         const parent = self.arena.child_allocator;
         self.arena.deinit();
         parent.destroy(self.arena);
+    }
+
+    /// True when at least one compiled overlay unit handles this room. Rooms
+    /// outside every unit fall through to the main dispatcher's
+    /// "Keine Action programmiert für diesen Raum" path.
+    pub fn containsRoom(self: Database, room: i64) bool {
+        for (self.units) |unit| {
+            if (unit.containsRoom(room)) return true;
+        }
+        return false;
+    }
+
+    pub fn isLocal(self: Database, address: i64) bool {
+        var lo: usize = 0;
+        var hi: usize = self.local_addresses.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            const value = self.local_addresses[mid];
+            if (value < address) {
+                lo = mid + 1;
+            } else if (value > address) {
+                hi = mid;
+            } else {
+                return true;
+            }
+        }
+        return false;
     }
 };
 
@@ -87,6 +117,7 @@ pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Database {
     const obj = asObject(root) orelse return error.InvalidOverlayRules;
     const units_value = obj.get("units") orelse return error.InvalidOverlayRules;
     const units_array = asArray(units_value) orelse return error.InvalidOverlayRules;
+    const local_addresses = try parseAddressArray(a, obj.get("local_addresses"));
     const units = try a.alloc(Unit, units_array.items.len);
     for (units_array.items, 0..) |item, i| {
         const unit_obj = asObject(item) orelse return error.InvalidOverlayRules;
@@ -109,7 +140,14 @@ pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Database {
             .rules = rules,
         };
     }
-    return .{ .arena = arena, .units = units };
+    return .{ .arena = arena, .units = units, .local_addresses = local_addresses };
+}
+
+fn parseAddressArray(allocator: std.mem.Allocator, value: ?std.json.Value) ![]i64 {
+    const array = if (value) |v| asArray(v) orelse return &[_]i64{} else return &[_]i64{};
+    const out = try allocator.alloc(i64, array.items.len);
+    for (array.items, 0..) |item, i| out[i] = objectIntFromValue(item);
+    return out;
 }
 
 fn parseRoomRanges(allocator: std.mem.Allocator, value: ?std.json.Value) ![]RoomRange {

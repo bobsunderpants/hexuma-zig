@@ -697,6 +697,14 @@ fn writeActionMenu(allocator: std.mem.Allocator, input: []const u8, output: []co
 /// 0x2bffd. Their filename table lives in HEXPRG.EXE at 0x22349 and the
 /// condition chain is emitted as structured expressions in src/data/overlays.json.
 fn writeOverlays(allocator: std.mem.Allocator, output: []const u8, manifest: *Manifest) !void {
+    // The room-action rules are generated once from the REA decompilations and
+    // live with the other derived data. Embed them so a fresh extract from the
+    // original game directory is sufficient to play with full room actions.
+    const rules = @embedFile("data/overlay_rules.json");
+    const rules_rel = "data/overlay_rules.json";
+    try util.writeFile(try util.join(allocator, &.{ output, rules_rel }), rules);
+    try manifest.add("derived:overlay-rules", rules, "data", "{\"format\":\"rea-room-action-rules\"}", rules_rel);
+
     const table = @embedFile("data/overlays.json");
     const rel = "data/overlays.json";
     try util.writeFile(try util.join(allocator, &.{ output, rel }), table);
