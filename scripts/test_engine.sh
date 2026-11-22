@@ -24,18 +24,15 @@ out="$(run 'gehe rauf' --choices)"
 grep -q 'Du gehst rauf' <<<"$out"
 
 # REA-derived VORS runtime overrides are applied to the start screen.
+# Startup has 0x5e31=1 (timer/postman active), so slot 4 keeps the original
+# "Öffne die Haustür" label; the close-door override applies when 0x5e31==0.
 out="$(run 'untersuche kamin' --choices)"
-grep -q 'Schließe die Haustüre' <<<"$out"
+grep -q 'Öffne die Haustür' <<<"$out"
 grep -q 'Gehe in die Bibliothek' <<<"$out"
 grep -q 'Schau das Gemälde an' <<<"$out"
 grep -q 'Nimm den Zettel' <<<"$out"
-# The VORS portion precedes the OBLISTE menu in the choice list; the menu
-# legitimately contains the original "Öffne die Haustür" label.
-vors_only="$(sed -n '/^  1\./,/^  9\./p' <<<"$out")"
-if grep -q 'Öffne die Haustür' <<<"$vors_only"; then
-  echo 'stale VORS label was not overridden' >&2
-  exit 1
-fi
+out="$("$BIN" vors --picture 1 --room 1 --flag 0x5e31=0 --extracted "$EXTRACTED")"
+grep -q $'^4\tSchließe die Haustüre\tSchließe die Haustüre$' <<<"$out"
 
 # REA-decoded open/close state machine (0x1755:0x31a1). The front door starts
 # open, toggles state, and non-openable objects use the exact code strings.
@@ -88,6 +85,13 @@ grep -q 'Sie haben nichts.' <<<"$out"
 grep -q 'Das kann man nicht anzünden.' <<<"$out"
 out="$(run 'nimm kamin')"
 grep -q 'kamin können Sie nicht nehmen!' <<<"$out"
+
+# Room-1 postman/envelope flow: timer advances f301, envelope/splitter become
+# takeable through overlay rules, and cae8-handled take grants inventory.
+# Evidence: docs/reports/HEXPRG_0x13e7d_pseudocode.c group 9 (obj 70/0x452a).
+out="$(printf 'warte\nwarte\nwarte\nöffne haustür\nnimm umschlag\nja\nja\nöffne umschlag\nnimm edelsteinsplitter\ninventur\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
+grep -q 'Behalten Sie es lieber selbst.' <<<"$out"
+grep -q 'Sie haben edelsteinsplitter.' <<<"$out"
 
 # Conditional FR overlays use the REA-derived startup globals.
 out="$("$BIN" overlays --room 1 --extracted "$EXTRACTED")"
@@ -168,5 +172,17 @@ printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$original_dir/00.
 printf 'schließe haustüre\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$original_dir/01.dat" >/dev/null
 test "$(sed -n '3p' "$original_dir/01.dat")" -eq 18
 printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$original_dir/01.dat" >/dev/null
+
+
+# Main-loop timer/counter 0xcae2 increments once per command iteration
+# (entry 0x11841: INC word ptr [0xcae2] at 0x1196f). Verb 47/wait returns
+# "Die Zeit vergeht..." (text 46) and still goes through overlay dispatch.
+out="$(printf 'warte\nwarte\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
+grep -q 'Die Zeit vergeht' <<<"$out"
+cae2_dir="$(mktemp -d)"
+printf 'warte\nwarte\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$cae2_dir/00.dat" >/dev/null
+# save_layout word range 51938..51940 is lines 10404..10406 in 00.dat
+test "$(sed -n '10404p' "$cae2_dir/00.dat")" -eq 2
+rm -rf "$cae2_dir"
 
 echo 'engine tests passed'

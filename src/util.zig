@@ -96,7 +96,7 @@ pub fn hexBytes(w: anytype, bytes: []const u8) !void {
 }
 
 pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    return std.fs.cwd().readFileAlloc(allocator, path, 64 * 1024 * 1024);
+    return std.fs.cwd().readFileAlloc(allocator, path, 256 * 1024 * 1024);
 }
 
 pub fn writeFile(path: []const u8, bytes: []const u8) !void {

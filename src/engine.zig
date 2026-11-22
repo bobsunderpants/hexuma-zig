@@ -315,6 +315,15 @@ pub const Game = struct {
                         }
                     }
                 }
+                if (initial_obj.get("words")) |wv| {
+                    if (asObject(wv)) |word_values| {
+                        var it = word_values.iterator();
+                        while (it.next()) |entry| {
+                            const address = std.fmt.parseInt(i64, entry.key_ptr.*, 10) catch continue;
+                            try game.words.put(address, @truncate(@as(u64, @bitCast(asInt(entry.value_ptr.*)))));
+                        }
+                    }
+                }
                 if (initial_obj.get("dwords")) |dv| {
                     if (asObject(dv)) |dword_values| {
                         var it = dword_values.iterator();
@@ -400,6 +409,14 @@ pub const Game = struct {
                 }
             }
         } else |_| {}
+
+        // VORS-controlled door flags: 0x5fa7==1 means room 1 east (library) is open.
+        // Evidence: docs/reports/vors-flags.md record 1 slot 9; hexuma.md overlay.
+        // Applied after LAND load because LAND init overwrites exits.
+        if ((game.flags.get(0x5fa7) orelse 0) == 1 and game.land_exits[1][3] < 0) {
+            game.negateExitSlot(1, 3); // east
+            if (game.land_exits[2][4] < 0) game.negateExitSlot(2, 4); // reciprocal west
+        }
 
         // The first OBNINT field is the 1-based LAND loader slot stored in
         // original global 0x37fc and used by the door open/close handler.
@@ -938,18 +955,29 @@ pub const Game = struct {
         return en_fallback;
     }
 
+    fn liveObjectGate(self: *const Game, entry: VocabEntry) i16 {
+        const live_addr = 0x449e + entry.id * 2;
+        if (self.overlay_locals.get(live_addr)) |live| return @intCast(@as(i16, @truncate(live)));
+        if (self.words.get(live_addr)) |live| return @as(i16, @bitCast(live));
+        if (self.flags.get(live_addr)) |live| return live;
+        return @intCast(entry.room_gate);
+    }
+
     /// Reproduce the original OBNINT.field_b gate closely enough for text
     /// lookups: current room, globally available, alias id, LAND adjacency,
     /// or a carried object. A zero gate is treated as globally available.
+    /// The live word table at 0x449e+id*2 can override the static gate
+    /// (overlay rules set it to make scripted objects appear/takeable).
     fn nounVisible(self: *const Game, index: i64) bool {
         const entry = self.vocabEntry(index) orelse return false;
         if (self.hasInInventory(entry.word)) return true;
-        const gate = entry.room_gate;
-        if (gate == self.room or gate == 0 or gate == 0xffff) return true;
+        const gate = self.liveObjectGate(entry);
+        if (gate == self.room or gate == 0 or gate == 0xffff or gate == -1) return true;
         if (gate < 0) {
-            if (self.vocab_by_id.get(-gate)) |alias_idx| {
-                const alias_gate = self.vocab[alias_idx].room_gate;
-                if (alias_gate == self.room or alias_gate == 0 or alias_gate == 0xffff) return true;
+            const alias_id: i64 = -@as(i64, gate);
+            if (self.vocab_by_id.get(alias_id)) |alias_idx| {
+                const alias_gate = self.liveObjectGate(self.vocab[alias_idx]);
+                if (alias_gate == self.room or alias_gate == 0 or alias_gate == 0xffff or alias_gate == -1) return true;
             }
         }
         for (all_directions) |edge| {
@@ -978,7 +1006,8 @@ pub const Game = struct {
         const w = out.writer(self.allocator);
         var names = std.ArrayList([]const u8).empty;
         for (self.vocab) |entry| {
-            if (entry.room_gate != self.room or self.hasInInventory(entry.word)) continue;
+            const gate = self.liveObjectGate(entry);
+            if (gate != self.room or self.hasInInventory(entry.word)) continue;
             if (entry.class == 6) {
                 if (self.textForId(entry.text_b)) |text| try w.print("{s}\n", .{text});
             }
@@ -1334,7 +1363,18 @@ pub const Game = struct {
             if (address == 0xcae4) return self.state.score;
             if (address == 0xc918) return self.game.pictureValue();
             if (self.game.overlay_db) |db| {
-                if (db.isLocal(address)) return self.game.overlay_locals.get(address) orelse 0;
+                if (db.isLocal(address)) {
+                    if (self.game.overlay_locals.get(address)) |value| return value;
+                    // OBNINT.field_b locals (0x449e + id*2) default to the
+                    // static vocab room gate when no overlay has written them.
+                    if (address >= 0x449e and address <= 0x4ce6 and @mod(address - 0x449e, 2) == 0) {
+                        const id = @divExact(address - 0x449e, 2);
+                        if (self.game.vocab_by_id.get(id)) |idx| {
+                            return self.game.vocab[idx].room_gate;
+                        }
+                    }
+                    return 0;
+                }
             }
             if (self.game.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
             if (self.game.words.get(address)) |value| return @as(i16, @bitCast(value));
@@ -1380,9 +1420,12 @@ pub const Game = struct {
 
     /// Globals whose width is fixed by the original decompilation. Using the
     /// right map matters for `.dat` parity and for sign-extension in guards.
-    fn isWordGlobal(address: i64) bool {
+    pub fn isWordGlobal(address: i64) bool {
         return switch (address) {
-            0xcae8, 0xc9c0, 0xc9be, 0x3d94, 0x3dc6, 0x3e4a, 0x7d7e, 0xf352, 0xf3b6, 0xf452 => true,
+            // 0xcae2 is the main-loop turn/timer counter incremented once per
+            // iteration in entry (0x11841, INC word ptr [0xcae2] at 0x1196f).
+            // 0xcae4 is the score word adjacent in the original save layout.
+            0xcae2, 0xcae4, 0xcae8, 0xc9c0, 0xc9be, 0x3d94, 0x3dc6, 0x3e4a, 0x7d7e, 0xf352, 0xf3b6, 0xf452 => true,
             else => false,
         };
     }
@@ -1568,6 +1611,7 @@ pub const Game = struct {
     }
 
     fn readGlobal(self: *const Game, address: i64) i64 {
+        if (address == 0xcae4) return @intCast(self.score);
         if (self.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
         if (self.words.get(address)) |value| return @as(i16, @bitCast(value));
         return self.flags.get(address) orelse 0;
@@ -1603,13 +1647,25 @@ pub const Game = struct {
         if (result.picture) |picture| self.picture_override = picture;
         if (result.messages.items.len == 0) return combined;
 
-        // The original verb handler and the room effect dispatcher both write
-        // into the same output buffer; overlay text is appended, not a
-        // replacement for the parser response.
+        // 0xcae8 is set by overlay rules to signal that the overlay consumed
+        // the command. In that case the overlay text replaces the generic/base
+        // handler response (e.g. class-restricted take, or scripted dialog).
+        const overlay_handled = self.readGlobal(0xcae8) != 0;
+        if (overlay_handled and verb == 1 and object_id > 0) {
+            if (self.vocab_by_id.get(object_id)) |idx| {
+                const entry = self.vocab[idx];
+                const live_class = self.flags.get(entry.id + 0x5140) orelse @as(u8, @intCast(@mod(entry.class, 256)));
+                if ((live_class == 1 or live_class == 2) and !self.hasInInventory(entry.word)) {
+                    try self.inventory.append(self.allocator, try self.allocator.dupe(u8, entry.word));
+                }
+            }
+        }
         var out = std.ArrayList(u8).empty;
         const w = out.writer(self.allocator);
-        try w.writeAll(combined);
-        if (combined.len != 0) try w.writeByte('\n');
+        if (!overlay_handled) {
+            try w.writeAll(combined);
+            if (combined.len != 0) try w.writeByte('\n');
+        }
         for (result.messages.items, 0..) |text, i| {
             if (i != 0) try w.writeByte('\n');
             try w.writeAll(text);
@@ -1648,10 +1704,33 @@ pub const Game = struct {
             .score = @intCast(self.score),
         };
         var context = OverlayContext{ .game = self, .state = &state };
-        const result = try overlay_eval.run(self.allocator, db, context.context(), state.room);
-        // Rewrite the header now that the real rule evaluation has completed.
+        var ran_units = std.ArrayList(i64).empty;
+        var result = overlay_eval.Result{};
+        var ran_any = false;
+        for (db.units) |unit| {
+            const should_run = unit.containsRoom(state.room) or unit.unit == 11;
+            if (!should_run) continue;
+            try ran_units.append(self.allocator, unit.unit);
+            const unit_result = try overlay_eval.runUnit(self.allocator, unit, context.context());
+            ran_any = true;
+            try result.message_ids.appendSlice(self.allocator, unit_result.message_ids.items);
+            try result.messages.appendSlice(self.allocator, unit_result.messages.items);
+            if (unit_result.picture) |picture| result.picture = picture;
+            result.dialog_count += unit_result.dialog_count;
+            result.clear_input = result.clear_input or unit_result.clear_input;
+            if (unit_result.returned) {
+                result.returned = true;
+                if (unit.unit == 11) break;
+                var has_11 = false;
+                for (db.units) |u| if (u.unit == 11) {
+                    has_11 = true;
+                };
+                if (!has_11) break;
+            }
+        }
+        if (!ran_any) result = .{};
         out.clearRetainingCapacity();
-        try w.print("room={d} verb={d} object={d} object2={d} allowed={s} f2f9={d} f2fa={d} returned={s}\n", .{
+        try w.print("room={d} verb={d} object={d} object2={d} allowed={s} f2f9={d} f2fa={d} f301={d} cae2={d} 5e31={d} returned={s} units=", .{
             state.room,
             verb,
             object,
@@ -1659,8 +1738,16 @@ pub const Game = struct {
             "yes",
             self.flags.get(0xf2f9) orelse 0,
             self.flags.get(0xf2fa) orelse 0,
+            self.flags.get(0xf301) orelse 0,
+            self.readGlobal(0xcae2),
+            self.flags.get(0x5e31) orelse 0,
             if (result.returned) "yes" else "no",
         });
+        for (ran_units.items, 0..) |u, i| {
+            if (i > 0) try w.writeByte(',');
+            try w.print("{d}", .{u});
+        }
+        try w.writeByte('\n');
         if (prelude.early_text) |text| try w.print("msg early: {s}\n", .{text});
         for (result.message_ids.items, 0..) |id, i| {
             const text = if (i < result.messages.items.len) result.messages.items[i] else "";
@@ -1668,6 +1755,30 @@ pub const Game = struct {
         }
         if (result.picture) |picture| try w.print("picture {d}\n", .{picture});
         return out.toOwnedSlice(self.allocator);
+    }
+
+    /// Port of the original quit handler at 0x1755:0x37b5. Before the final
+    /// room sets 0xcbeb, the original shows a cancelable "progress lost" dialog;
+    /// the CLI has no modal UI, so it reports the warning and exits. After the
+    /// ending, it prints the original final score/moves screen.
+    fn quitAction(self: *Game) ![]const u8 {
+        self.quit_requested = true;
+        if ((self.flags.get(0xcbeb) orelse 0) == 0) {
+            return self.message("quit.lost", "Der Spielstand geht verloren!", "Your progress will be lost!");
+        }
+        self.flags.put(0xcbeb, 4) catch {};
+        if (self.locale == .de) {
+            return std.fmt.allocPrint(
+                self.allocator,
+                "\nSie haben {d} Punkte von 1617 in {d} Spielzügen erreicht.\nZurück zu DOS mit [RETURN]...",
+                .{ self.score, self.moves },
+            );
+        }
+        return std.fmt.allocPrint(
+            self.allocator,
+            "\nYou scored {d} points out of 1617 in {d} moves.\nReturn to DOS with [RETURN]...",
+            .{ self.score, self.moves },
+        );
     }
 
     pub fn execute(self: *Game, raw_input: []const u8) ![]const u8 {
@@ -1685,10 +1796,7 @@ pub const Game = struct {
         } else |_| {}
 
         const lower = try lowerDup(self.allocator, input);
-        if (eqIgnoreCase(lower, "ende") or eqIgnoreCase(lower, "quit") or eqIgnoreCase(lower, "exit")) {
-            self.quit_requested = true;
-            return if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
-        }
+        if (eqIgnoreCase(lower, "exit")) return self.quitAction();
         var tokens = std.ArrayList([]const u8).empty;
         var it = std.mem.tokenizeAny(u8, lower, " \t,.;!?");
         while (it.next()) |tok| {
@@ -1723,13 +1831,40 @@ pub const Game = struct {
 
         const v = verb.?;
         self.moves += 1;
+        // Original main loop increments the global timer/counter at 0xcae2 once
+        // per command iteration (entry 0x11841, INC word ptr [0xcae2] at 0x1196f).
+        self.writeGlobal(0xcae2, self.readGlobal(0xcae2) + 1);
 
-        const move_dir = directionFromId(v) orelse blk: {
+        var move_dir = directionFromId(v) orelse blk: {
             if (v == 7 or v == 119 or v == 3) {
                 break :blk self.directionFromWord(tokens.items);
             }
             break :blk null;
         };
+        if (move_dir == null and (v == 7 or v == 119)) {
+            // VORS labels like "Gehe in die Bibliothek" name a destination, not
+            // a compass direction. Resolve to an adjacent exit when possible.
+            // Skip negative exits: doors are handled by open/close+direction.
+            for (tokens.items, 0..) |tok, i| {
+                if (i == verb_pos and self.verbId(tok) != null) continue;
+                if (self.nounIndex(tok)) |idx| {
+                    const entry = self.vocabEntry(idx) orelse continue;
+                    const gate = self.liveObjectGate(entry);
+                    var matched_dir: ?Direction = null;
+                    for (all_directions) |edge| {
+                        const target = self.exitTo(edge.dir);
+                        if (target > 0 and target == gate) {
+                            matched_dir = edge.dir;
+                            break;
+                        }
+                    }
+                    if (matched_dir) |dir| {
+                        move_dir = dir;
+                        break;
+                    }
+                }
+            }
+        }
         if (move_dir) |dir| {
             // The original movement handler clears this word on every exit path.
             self.writeGlobal(0x7d7e, 0);
@@ -1811,7 +1946,12 @@ pub const Game = struct {
                 try w.writeAll(prefix);
                 for (self.inventory.items, 0..) |item, idx| {
                     if (idx > 0) {
-                        try w.writeAll(if (idx + 1 == self.inventory.items.len) and_word else comma);
+                        if (idx + 1 == self.inventory.items.len) {
+                            try w.writeAll(" ");
+                            try w.writeAll(and_word);
+                        } else {
+                            try w.writeAll(comma);
+                        }
                     }
                     try w.writeAll(self.localizedWord(item));
                 }
@@ -1820,10 +1960,7 @@ pub const Game = struct {
             },
             24 => self.tr("Hilfe"), // hilfe
             25 => std.fmt.allocPrint(self.allocator, "{s}: {d}\n{s}: {d}", .{ self.tr("Punkte"), self.score, if (self.locale == .de) "Züge" else "Moves", self.moves }) catch unreachable,
-            50 => blk: {
-                self.quit_requested = true;
-                break :blk if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
-            },
+            50 => try self.quitAction(),
             1 => blk: { // nimm, original 0x1755:0x203d
                 if (noun_index == null or noun.len == 0) {
                     break :blk self.message("take.0", "Bitte geben Sie genau an, was Sie nehmen wollen.", "Please specify exactly what you want to take.");
@@ -1840,7 +1977,9 @@ pub const Game = struct {
                 }
                 // OBNBYT[0] at 0x5140: 0 is scenery, 1 portable, 2 a
                 // container. The original rejects every other class here.
-                if (entry.class != 1 and entry.class != 2) {
+                const id = self.vocabularyId(noun_index.?) orelse 0;
+                const live_class = self.flags.get(id + 0x5140) orelse @as(u8, @intCast(@mod(entry.class, 256)));
+                if (live_class != 1 and live_class != 2) {
                     if (self.locale == .de) {
                         const fragment = self.code_msg_by_key.get("take.2") orelse "können Sie nicht nehmen!";
                         break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
@@ -1941,6 +2080,11 @@ pub const Game = struct {
                 }
                 break :blk "You see nothing special.";
             },
+            47 => self.textForId(46) orelse self.message(
+                "wait.0",
+                "Die Zeit vergeht...*",
+                "Time passes...",
+            ),
             else => blk: {
                 if (v == 68 or eqIgnoreCase(lower, "quit") or eqIgnoreCase(lower, "ende")) {
                     self.quit_requested = true;
@@ -2193,8 +2337,12 @@ pub const Game = struct {
         if (self.flags.get(0xc918)) |scene| self.picture_override = scene;
         self.inventory.deinit(self.allocator);
         self.inventory = inventory;
-        self.moves = 0;
-        self.score = 0;
+        if (self.words.get(0xcae2)) |moves_word| {
+            self.moves = @intCast(@max(0, @as(i16, @bitCast(moves_word))));
+        } else {
+            self.moves = 0;
+        }
+        if (self.words.get(0xcae4)) |score_word| self.score = @intCast(@max(0, @as(i16, @bitCast(score_word))));
         self.quit_requested = false;
     }
 

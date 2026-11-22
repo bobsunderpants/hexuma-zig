@@ -265,14 +265,18 @@ else
 fi
 
 if [ -n "$ZIG_COMMANDS" ] && [ -x "$ROOT/zig-out/bin/hexuma" ]; then
-  {
-    IFS=';' read -ra commands <<< "$ZIG_COMMANDS"
-    for command in "${commands[@]}"; do
-      [ -z "$command" ] && continue
-      printf '%s\nquit\n' "$command" | \
-        "$ROOT/zig-out/bin/hexuma" play --extracted "$ROOT/extracted" --choices
-    done
-  } >"$OUT_DIR/zig-output.txt" 2>&1
+  # Run one process for the whole sequence so room, inventory, doors, score and
+  # move count persist between commands. The per-command fresh-process loop
+  # silently reset state after every step and was not valid parity evidence.
+  : >"$OUT_DIR/zig-commands.txt"
+  IFS=';' read -ra commands <<< "$ZIG_COMMANDS"
+  for command in "${commands[@]}"; do
+    [ -z "$command" ] && continue
+    printf '%s\n' "$command" >>"$OUT_DIR/zig-commands.txt"
+  done
+  "$ROOT/zig-out/bin/hexuma" play --extracted "$ROOT/extracted" --choices \
+    --script "$OUT_DIR/zig-commands.txt" --trace-file "$OUT_DIR/zig-trace.ndjson" \
+    >"$OUT_DIR/zig-output.txt" 2>&1
 fi
 
 echo "original screenshot: $OUT_DIR/original.png ($capture_status)"

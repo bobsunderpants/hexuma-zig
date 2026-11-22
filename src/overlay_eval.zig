@@ -29,14 +29,35 @@ pub const Result = struct {
 };
 
 pub fn run(allocator: std.mem.Allocator, db: rules.Database, context: Context, room: i64) !Result {
+    var result = Result{};
+    var ran_any = false;
     for (db.units) |unit| {
-        if (!unit.containsRoom(room)) continue;
-        return runUnit(allocator, unit, context);
+        // Unit 11 is the main-module dispatcher (0x13e7d). It contains global
+        // timer/state rules that apply beyond its nominal 17,26 room ranges.
+        const should_run = unit.containsRoom(room) or unit.unit == 11;
+        if (!should_run) continue;
+        const unit_result = try runUnit(allocator, unit, context);
+        ran_any = true;
+        try result.message_ids.appendSlice(allocator, unit_result.message_ids.items);
+        try result.messages.appendSlice(allocator, unit_result.messages.items);
+        if (unit_result.picture) |picture| result.picture = picture;
+        result.dialog_count += unit_result.dialog_count;
+        result.clear_input = result.clear_input or unit_result.clear_input;
+        if (unit_result.returned) {
+            result.returned = true;
+            if (unit.unit == 11) break;
+            var has_11 = false;
+            for (db.units) |u| if (u.unit == 11) {
+                has_11 = true;
+            };
+            if (!has_11) break;
+        }
     }
-    return .{};
+    if (!ran_any) return .{};
+    return result;
 }
 
-fn runUnit(allocator: std.mem.Allocator, unit: rules.Unit, context: Context) !Result {
+pub fn runUnit(allocator: std.mem.Allocator, unit: rules.Unit, context: Context) !Result {
     var result = Result{};
     var current_group: ?i64 = null;
     var group_enabled = false;

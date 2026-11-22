@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Match original DOS frames against known engine text lines.
+"""Candidate-driven semantic check of a DOSBox frame.
 
-This is not general OCR.  It uses the original 8x8 proportional FON glyph masks
-to score every supplied candidate string at each text line position.  Supplying
-the engine's own output as candidates makes semantic DOSBox parity checkable:
-a high match score at a screen row means the original displays that line.
+This is not general OCR. It scores the engine's own response lines against the
+original DOS text pixels using the original proportional FON glyph masks. The
+result is a confidence-ranked list of candidates for each text row; it is used
+as parity evidence, not as pixel-identity proof.
 
 Usage:
-  parity_ocr.py SCREENSHOT CANDIDATES_FILE [CANDIDATES_FILE ...]
+  parity_ocr.py SCREENSHOT CANDIDATES_FILE [FILE ...]
+  parity_ocr.py SCREENSHOT --candidates-json STEP.json [--json OUT] [--step ID]
 """
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import subprocess
 import sys
@@ -18,22 +21,42 @@ from pathlib import Path
 
 DEFAULT_FONT = Path("/home/bob/Downloads/Hexuma/8X8PROP.FON")
 WIDTH, HEIGHT = 320, 200
-TEXT_TOP, TEXT_BOTTOM, TEXT_STEP = 123, 192, 7
-X_STARTS = range(24, 32)
-Y_OFFSETS = (-1, 0, 1)
+TEXT_TOP, TEXT_BOTTOM = 100, 193
+X_STARTS = range(20, 43)
+# Text in DOS captures is mostly olive/yellow on dark background, but
+# antialiasing and capture differences introduce nearby shades. Accept exact
+# palette hits and a tolerant olive/bright heuristic.
+TEXT_COLORS = {
+    (146, 146, 93), (158, 162, 109), (174, 174, 125),
+    (231, 235, 207), (243, 243, 231),
+}
+
+
+def is_text_pixel(r: int, g: int, b: int) -> bool:
+    if (r, g, b) in TEXT_COLORS:
+        return True
+    # Olive/yellow antialiased text: red/green dominant, blue suppressed.
+    if r >= 110 and g >= 100 and b <= 210 and (r + g) >= 2 * b + 30:
+        # Exclude very dark/brown UI noise.
+        if r + g + b >= 280:
+            return True
+    # Bright near-white text edges.
+    if r >= 210 and g >= 210 and b >= 170:
+        return True
+    return False
 
 
 def load_font(path: Path):
     data = path.read_bytes()
     if len(data) != 256 + 256 * 62:
         raise ValueError(f"unexpected FON size {len(data)}")
-    records = [data[256 + c * 62:256 + (c + 1) * 62] for c in range(256)]
     glyphs = []
-    for c, rec in enumerate(records):
+    for code in range(256):
+        rec = data[256 + code * 62:256 + (code + 1) * 62]
         rows = []
         for dy in range(8):
-            bits = rec[4 + dy * 7:4 + dy * 7 + 7]
-            rows.append(tuple((dx, bool(bits[dx])) for dx in range(7) if bits[dx]))
+            width = min(rec[0], 7)
+            rows.append(tuple(dx for dx in range(width) if rec[4 + dy * 7 + dx]))
         glyphs.append((rows, rec[0]))
     return glyphs
 
@@ -46,30 +69,39 @@ def load_screen(path: Path):
         row = bytearray(WIDTH)
         for x in range(WIDTH):
             i = base + x * 3
-            r, g, b = raw[i], raw[i + 1], raw[i + 2]
-            row[x] = 1 if r > 80 and abs(r - g) < 14 and 18 <= r - b <= 75 else 0
+            row[x] = 1 if is_text_pixel(raw[i], raw[i + 1], raw[i + 2]) else 0
         rows.append(bytes(row))
     return rows
 
 
-def candidates(paths: list[str]) -> list[str]:
+def candidates_from_files(paths: list[str]) -> list[str]:
     out: list[str] = []
     for name in paths:
         for line in Path(name).read_text(errors="replace").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            if "XTEST_SCRIPT" in name or Path(name).name == "input-script.txt":
-                for entry in line.split(";"):
-                    if ":" not in entry:
-                        continue
-                    cmd = entry.split(":", 1)[1]
-                    for token in cmd.replace(",", " ").split():
-                        if token == "enter":
-                            continue
-                        out.append(token)
-            out.append(line)
-    # Preserve order, remove duplicates.
+            line = line.strip().lstrip("> ")
+            if line and not line[0].isdigit():
+                out.append(line)
+    return list(dict.fromkeys(out))
+
+
+def candidates_from_json(path: Path, step: str | None) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        rows = [json.loads(line) for line in text.splitlines() if line.strip()]
+        if step is not None:
+            rows = [row for row in rows if str(row.get("step")) == str(step)]
+        data = {"response": [line for row in rows
+                             for line in (row.get("response", []) + row.get("look", []))]}
+    if step is not None and isinstance(data, dict) and step in data:
+        data = data[step]
+    out: list[str] = []
+    for key in ("response", "look", "choices"):
+        for line in data.get(key, []) or []:
+            line = str(line).strip()
+            if line:
+                out.append(line)
     return list(dict.fromkeys(out))
 
 
@@ -86,58 +118,86 @@ def renderable(line: str, glyphs):
     return chars
 
 
-def score_line(chars, x0: int, y0: int, screen) -> float:
+def score_candidate(chars, x0: int, y0: int, screen) -> dict:
     x = x0
-    score = 0
-    matched_ink = 0
+    matched = expected = 0
     for rows, advance in chars:
-        if x + 7 > WIDTH:
-            break
-        for dy in range(8):
-            screen_row = screen[y0 + dy]
-            for dx, ink in rows[dy]:
-                actual = screen_row[x + dx]
-                if ink:
-                    if actual:
-                        score += 5
-                        matched_ink += 1
-                    else:
-                        score -= 3
-                elif not actual:
-                    score += 1
+        for dy, points in enumerate(rows):
+            for dx in points:
+                expected += 1
+                px = x + dx
+                py = y0 + dy
+                if px < WIDTH and screen[py][px]:
+                    matched += 1
                 else:
-                    score -= 3
+                    # Antialiased DOS text can shift by a pixel; allow a small
+                    # neighborhood hit but only as weak evidence.
+                    hit = False
+                    for ny in range(max(TEXT_TOP, py - 1), min(TEXT_BOTTOM, py + 2)):
+                        if hit:
+                            break
+                        for nx in range(max(0, px - 1), min(WIDTH, px + 2)):
+                            if screen[ny][nx]:
+                                matched += 0.7
+                                hit = True
+                                break
         x += advance
-    # Penalise screen ink left unexplained by this candidate.  Without this a
-    # short menu fragment such as "8." can win simply by being exact.
-    total_ink = 0
-    for dy in range(8):
-        total_ink += sum(screen[y0 + dy][24:300])
-    return score - 3 * (total_ink - matched_ink)
+    end = min(x, WIDTH)
+    ink = sum(sum(screen[y0 + dy][x0:end]) for dy in range(8))
+    unexplained = max(0, ink - int(matched))
+    coverage = matched / expected if expected else 0.0
+    precision = matched / (matched + unexplained) if matched + unexplained else 0.0
+    return {"x": x0, "y": y0, "matched": round(matched, 2), "expected": expected,
+            "unexplained": unexplained, "coverage": round(coverage, 4),
+            "precision": round(precision, 4),
+            "confidence": round(coverage * precision, 4)}
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 3:
-        print("usage: parity_ocr.py SCREENSHOT CANDIDATES_FILE [FILE...]", file=sys.stderr)
-        return 2
-    font_path = Path(os.environ.get("HEXUMA_FONT", str(DEFAULT_FONT)))
-    font = load_font(font_path)
-    screen = load_screen(Path(argv[1]))
-    lines = candidates(argv[2:])
-    rendered = [(line, renderable(line, font)) for line in lines]
-    for y in range(TEXT_TOP, TEXT_BOTTOM, TEXT_STEP):
-        best = (-10**9, "", 0, 0)
-        for line, chars in rendered:
-            if not chars:
-                continue
-            for x in X_STARTS:
-                for yo in Y_OFFSETS:
-                    sc = score_line(chars, x, y + yo, screen)
-                    if sc > best[0]:
-                        best = (sc, line, x, y + yo)
-        print(f"y={y:3d} score={best[0]:5d} x={best[2]:2d} text={best[1]!r}")
+def best_match(line: str, glyphs, screen) -> dict:
+    chars = renderable(line, glyphs)
+    if not chars:
+        return {"line": line, "confidence": 0.0}
+    best = {"line": line, "confidence": -1.0}
+    for y in range(TEXT_TOP, TEXT_BOTTOM):
+        for x in X_STARTS:
+            result = score_candidate(chars, x, y, screen)
+            if result["confidence"] > best["confidence"]:
+                best = {"line": line, **result}
+    return best
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("screen")
+    parser.add_argument("candidates", nargs="*")
+    parser.add_argument("--candidates-json")
+    parser.add_argument("--step")
+    parser.add_argument("--json")
+    parser.add_argument("--font", default=os.environ.get("HEXUMA_FONT", str(DEFAULT_FONT)))
+    args = parser.parse_args(argv)
+
+    glyphs = load_font(Path(args.font))
+    screen = load_screen(Path(args.screen))
+    if args.candidates_json:
+        lines = candidates_from_json(Path(args.candidates_json), args.step)
+    elif args.candidates:
+        lines = candidates_from_files(args.candidates)
+    else:
+        parser.error("provide candidate files or --candidates-json")
+
+    ranked = sorted((best_match(line, glyphs, screen) for line in lines),
+                    key=lambda row: row["confidence"], reverse=True)
+    result = {"screen": args.screen, "step": args.step,
+              "candidates": len(lines), "matches": ranked}
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    else:
+        for row in ranked:
+            print(f"{row['confidence']:.4f} y={row.get('y', '-')} "
+                  f"x={row.get('x', '-')} {row['line']!r}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

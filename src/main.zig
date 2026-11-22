@@ -1057,10 +1057,132 @@ fn extract(allocator: std.mem.Allocator, input: []const u8, output: []const u8) 
     std.debug.print("extracted {d} images, {d} audio files, {d} dialogue strings -> {s}\n", .{ images.items.len, audio_count, dialogue.items.len, output });
 }
 
-fn play(allocator: std.mem.Allocator, extracted_dir: []const u8, locale: engine.Locale, show_choices: bool, load_path: ?[]const u8, save_path: ?[]const u8) !void {
+fn lessI64(_: void, a: i64, b: i64) bool {
+    return a < b;
+}
+
+fn traceSortedMap(writer: anytype, allocator: std.mem.Allocator, comptime name: []const u8, map: anytype) !void {
+    var keys = std.ArrayList(i64).empty;
+    defer keys.deinit(allocator);
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        const value = entry.value_ptr.*;
+        if (value == 0) continue;
+        try keys.append(allocator, entry.key_ptr.*);
+    }
+    std.mem.sort(i64, keys.items, {}, lessI64);
+    try writer.writeByte('\t');
+    try writer.writeAll(name);
+    try writer.writeByte('=');
+    for (keys.items, 0..) |key, i| {
+        if (i != 0) try writer.writeByte(',');
+        try writer.print("0x{x}:{d}", .{ @as(u64, @bitCast(key)), map.get(key).? });
+    }
+}
+
+fn traceState(allocator: std.mem.Allocator, game: *const engine.Game, step: usize) void {
+    var buf: [16384]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&buf);
+    const out = &stderr_writer.interface;
+    defer out.flush() catch {};
+    out.print("TRACE\t{d}\troom={d}\tscore={d}\tmoves={d}\tobject={d}\tobject2={d}\tpicture={d}\tinventory=", .{
+        step, game.room, game.score, game.moves, game.object_slot, game.object2_slot, game.pictureValue(),
+    }) catch return;
+    for (game.inventory.items, 0..) |item, i| {
+        if (i != 0) out.writeByte('|') catch return;
+        out.writeAll(item) catch return;
+    }
+    traceSortedMap(out, allocator, "flags", game.flags) catch return;
+    traceSortedMap(out, allocator, "words", game.words) catch return;
+    traceSortedMap(out, allocator, "dwords", game.dword_flags) catch return;
+    out.writeByte('\n') catch return;
+}
+
+fn writeJsonString(writer: anytype, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |c| switch (c) {
+        '"' => try writer.writeAll("\\\""),
+        '\\' => try writer.writeAll("\\\\"),
+        '\n' => try writer.writeAll("\\n"),
+        '\r' => try writer.writeAll("\\r"),
+        '\t' => try writer.writeAll("\\t"),
+        else => if (c < 0x20) {
+            try writer.print("\\u{x:0>4}", .{c});
+        } else {
+            try writer.writeByte(c);
+        },
+    };
+    try writer.writeByte('"');
+}
+
+fn writeJsonLines(writer: anytype, text: []const u8) !void {
+    try writer.writeByte('[');
+    var it = std.mem.splitScalar(u8, text, '\n');
+    var first = true;
+    while (it.next()) |line| {
+        if (!first) try writer.writeByte(',');
+        first = false;
+        try writeJsonString(writer, line);
+    }
+    try writer.writeByte(']');
+}
+
+fn writeJsonMap(writer: anytype, allocator: std.mem.Allocator, comptime name: []const u8, map: anytype) !void {
+    var keys = std.ArrayList(i64).empty;
+    defer keys.deinit(allocator);
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* == 0) continue;
+        try keys.append(allocator, entry.key_ptr.*);
+    }
+    std.mem.sort(i64, keys.items, {}, lessI64);
+    try writer.print(",\"{s}\":{{", .{name});
+    for (keys.items, 0..) |key, i| {
+        if (i != 0) try writer.writeByte(',');
+        try writer.print("\"0x{x}\":{d}", .{ @as(u64, @bitCast(key)), map.get(key).? });
+    }
+    try writer.writeByte('}');
+}
+
+fn writeTraceJson(file: std.fs.File, allocator: std.mem.Allocator, step: usize, command: ?[]const u8, text: []const u8, game: *const engine.Game) !void {
+    var record = std.ArrayList(u8).empty;
+    defer record.deinit(allocator);
+    const out = record.writer(allocator);
+    try out.print("{{\"step\":{d},\"kind\":", .{step});
+    if (command) |cmd| {
+        try writeJsonString(out, "command");
+        try out.writeAll(",\"command\":");
+        try writeJsonString(out, cmd);
+        try out.writeAll(",\"response\":");
+    } else {
+        try writeJsonString(out, "initial");
+        try out.writeAll(",\"look\":");
+    }
+    try writeJsonLines(out, text);
+    try out.writeAll(",\"state\":{");
+    try out.print("\"room\":{d},\"score\":{d},\"moves\":{d},\"object\":{d},\"object2\":{d},\"picture\":{d},\"inventory\":[", .{
+        game.room, game.score, game.moves, game.object_slot, game.object2_slot, game.pictureValue(),
+    });
+    for (game.inventory.items, 0..) |item, i| {
+        if (i != 0) try out.writeByte(',');
+        try writeJsonString(out, item);
+    }
+    try out.writeByte(']');
+    try writeJsonMap(out, allocator, "flags", game.flags);
+    try writeJsonMap(out, allocator, "words", game.words);
+    try writeJsonMap(out, allocator, "dwords", game.dword_flags);
+    try out.writeAll("}}\n");
+    try file.writeAll(record.items);
+}
+
+fn play(allocator: std.mem.Allocator, extracted_dir: []const u8, locale: engine.Locale, show_choices: bool, trace: bool, trace_path: ?[]const u8, script_path: ?[]const u8, load_path: ?[]const u8, save_path: ?[]const u8) !void {
     var game = try engine.Game.init(allocator, extracted_dir, locale);
     defer game.deinit();
     if (load_path) |p| try game.load(p);
+
+    var trace_file: ?std.fs.File = null;
+    if (trace_path) |p| trace_file = try std.fs.cwd().createFile(p, .{});
+    defer if (trace_file) |f| f.close();
 
     var stdout_buf: [8192]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
@@ -1071,23 +1193,52 @@ fn play(allocator: std.mem.Allocator, extracted_dir: []const u8, locale: engine.
     var stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
     const stdin = &stdin_reader.interface;
 
-    try stdout.print("{s}\n", .{try game.look()});
-    while (!game.quit_requested) {
-        if (show_choices) {
-            const list = try game.choices();
-            try stdout.writeAll("\n");
-            for (list, 1..) |choice, i| {
-                try stdout.print("  {d}. {s}\n", .{ i, choice.label });
+    const initial = try game.look();
+    try stdout.print("{s}\n", .{initial});
+    if (trace_file) |f| try writeTraceJson(f, allocator, 0, null, initial, &game);
+    if (trace) traceState(allocator, &game, 0);
+
+    var step: usize = 0;
+    if (script_path) |path| {
+        const script = try util.readFile(allocator, path);
+        var lines = std.mem.splitScalar(u8, script, '\n');
+        while (lines.next()) |raw| {
+            if (game.quit_requested) break;
+            const line = std.mem.trim(u8, raw, " \t\r");
+            if (line.len == 0 or line[0] == '#') continue;
+            if (show_choices) {
+                const list = try game.choices();
+                try stdout.writeAll("\n");
+                for (list, 1..) |choice, i| try stdout.print("  {d}. {s}\n", .{ i, choice.label });
             }
+            try stdout.writeAll("\n> ");
+            try stdout.flush();
+            step += 1;
+            const response = try game.execute(line);
+            try stdout.print("{s}\n", .{response});
+            if (trace_file) |f| try writeTraceJson(f, allocator, step, line, response, &game);
+            if (trace) traceState(allocator, &game, step);
         }
-        try stdout.writeAll("\n> ");
-        try stdout.flush();
-        const line_with_delim = stdin.takeDelimiterInclusive('\n') catch |err| switch (err) {
-            error.EndOfStream => break,
-            else => return err,
-        };
-        const line = std.mem.trimRight(u8, line_with_delim, "\r\n");
-        try stdout.print("{s}\n", .{try game.execute(line)});
+    } else {
+        while (!game.quit_requested) {
+            if (show_choices) {
+                const list = try game.choices();
+                try stdout.writeAll("\n");
+                for (list, 1..) |choice, i| try stdout.print("  {d}. {s}\n", .{ i, choice.label });
+            }
+            try stdout.writeAll("\n> ");
+            try stdout.flush();
+            const line_with_delim = stdin.takeDelimiterInclusive('\n') catch |err| switch (err) {
+                error.EndOfStream => break,
+                else => return err,
+            };
+            const line = std.mem.trimRight(u8, line_with_delim, "\r\n");
+            step += 1;
+            const response = try game.execute(line);
+            try stdout.print("{s}\n", .{response});
+            if (trace_file) |f| try writeTraceJson(f, allocator, step, line, response, &game);
+            if (trace) traceState(allocator, &game, step);
+        }
     }
     if (save_path) |p| try game.save(p);
 }
@@ -1161,6 +1312,8 @@ fn applyFlagSpec(game: *engine.Game, spec: []const u8, is_dword: bool) !void {
     const value = std.fmt.parseInt(i64, spec[eq + 1 ..], 0) catch return error.InvalidFlagSpec;
     if (is_dword) {
         try game.dword_flags.put(address, @bitCast(@as(i32, @intCast(value))));
+    } else if (engine.Game.isWordGlobal(address)) {
+        try game.words.put(address, @truncate(@as(u16, @intCast(@mod(value, 65536)))));
     } else {
         try game.flags.put(address, @intCast(@mod(value, 256)));
     }
@@ -1218,8 +1371,8 @@ pub fn main() !void {
             \\  hexuma extract --input DIR --output DIR   decode all original assets
             \\  hexuma info FILE                         describe one asset
             \\  hexuma run SCRIPT.lua                    run a Lua game-logic script
-            \\  hexuma play [--lang de|en] [--choices] [--extracted DIR]
-            \\             [--load FILE] [--save FILE]
+            \\  hexuma play [--lang de|en] [--choices] [--trace] [--trace-file FILE]
+            \\             [--script FILE] [--extracted DIR] [--load FILE] [--save FILE]
             \\                                           play from extracted assets
             \\  hexuma gui [--lang de|en] [--extracted DIR]
             \\                                           point-and-click X11 window
@@ -1261,6 +1414,9 @@ pub fn main() !void {
         var extracted_dir: []const u8 = "extracted";
         var locale: engine.Locale = .de;
         var show_choices = false;
+        var trace = false;
+        var trace_path: ?[]const u8 = null;
+        var script_path: ?[]const u8 = null;
         var load_path: ?[]const u8 = null;
         var save_path: ?[]const u8 = null;
         var i: usize = 2;
@@ -1279,9 +1435,17 @@ pub fn main() !void {
                 save_path = args[i];
             } else if (std.mem.eql(u8, args[i], "--choices") or std.mem.eql(u8, args[i], "--click")) {
                 show_choices = true;
+            } else if (std.mem.eql(u8, args[i], "--trace")) {
+                trace = true;
+            } else if (std.mem.eql(u8, args[i], "--trace-file") and i + 1 < args.len) {
+                i += 1;
+                trace_path = args[i];
+            } else if (std.mem.eql(u8, args[i], "--script") and i + 1 < args.len) {
+                i += 1;
+                script_path = args[i];
             }
         }
-        try play(allocator, extracted_dir, locale, show_choices, load_path, save_path);
+        try play(allocator, extracted_dir, locale, show_choices, trace, trace_path, script_path, load_path, save_path);
     } else if (std.mem.eql(u8, command, "gui")) {
         var extracted_dir: []const u8 = "extracted";
         var locale: engine.Locale = .de;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Send scripted X11 keystrokes/clicks to a DOSBox window.
 
-This is a parity-harness helper, not part of the Zig engine.  It uses ctypes so
+This is a parity-harness helper, not part of the Zig engine. It uses ctypes so
 it works without XTest development headers or a compiler: this environment has
 libXtst.so.6 at runtime but no libXtst.so linker symlink and no XTest.h.
 
@@ -12,6 +12,9 @@ Tokens are key names accepted by XStringToKeysym (for example `enter` maps to
 `Return` through the alias table), single characters, `space`, `clickX,Y` where
 X/Y are window-relative, or `pause:MS`. German umlaut keysyms that have no
 keycode on the current X layout fall back to ae/oe/ue/ss transliteration.
+
+The XTestClient class is used by dosbox_parity.py with a token *array*, which
+avoids shell/comma ambiguity for click coordinates and punctuation.
 """
 from __future__ import annotations
 
@@ -47,6 +50,13 @@ x11.XRaiseWindow.restype = Bool
 x11.XRaiseWindow.argtypes = [DisplayPtr, Window]
 x11.XGetInputFocus.restype = Bool
 x11.XGetInputFocus.argtypes = [DisplayPtr, ctypes.POINTER(Window), ctypes.POINTER(ctypes.c_int)]
+x11.XQueryTree.restype = Bool
+x11.XQueryTree.argtypes = [
+    DisplayPtr, Window, ctypes.POINTER(Window), ctypes.POINTER(Window),
+    ctypes.POINTER(ctypes.POINTER(Window)), ctypes.POINTER(ctypes.c_uint),
+]
+x11.XFree.restype = None
+x11.XFree.argtypes = [DisplayPtr]
 x11.XSendEvent.restype = Bool
 x11.XSendEvent.argtypes = [DisplayPtr, Window, Bool, ctypes.c_long, ctypes.c_void_p]
 x11.XTranslateCoordinates.restype = Bool
@@ -110,82 +120,122 @@ class ClientMessageEvent(ctypes.Structure):
     ]
 
 
-def activate(display: int, window: int) -> None:
-    # XEvent is larger than XClientMessageEvent; allocate enough bytes and fill
-    # the leading client-message fields.
-    event_buf = ctypes.create_string_buffer(192)
-    event = ctypes.cast(event_buf, ctypes.POINTER(ClientMessageEvent)).contents
-    event.type = 33  # ClientMessage
-    event.window = window
-    event.message_type = x11.XInternAtom(display, b"_NET_ACTIVE_WINDOW", False)
-    event.format = 32
-    event.data[0] = 1  # request from normal application
-    event.data[1] = CurrentTime
-    x11.XSendEvent(
-        display, x11.XDefaultRootWindow(display), False,
-        SubstructureRedirectMask | SubstructureNotifyMask, event_buf,
-    )
-    x11.XSetInputFocus(display, window, RevertToParent, CurrentTime)
-    x11.XRaiseWindow(display, window)
-    x11.XFlush(display)
-    time.sleep(0.1)
-    focused = Window()
-    revert = ctypes.c_int()
-    x11.XGetInputFocus(display, ctypes.byref(focused), ctypes.byref(revert))
-    if focused.value != window:
-        print(f"warning: X input focus is 0x{focused.value:x}, wanted 0x{window:x}", file=sys.stderr)
+class XTestClient:
+    def __init__(self, display_name: str | None = None):
+        self.display_name = display_name or os.environ.get("DISPLAY", ":1")
+        self.display = x11.XOpenDisplay(self.display_name.encode())
+        if not self.display:
+            raise RuntimeError(f"cannot open X display {self.display_name}")
 
+    def close(self) -> None:
+        if self.display:
+            x11.XCloseDisplay(self.display)
+            self.display = None
 
-def keysym_for(token: str) -> int:
-    name = ALIASES.get(token, token)
-    sym = x11.XStringToKeysym(name.encode("utf-8"))
-    if sym == 0 and len(token) == 1:
-        sym = ord(token)
-    return sym
+    def __enter__(self) -> "XTestClient":
+        return self
 
+    def __exit__(self, *exc) -> None:
+        self.close()
 
-def keycode(display: int, token: str) -> int:
-    name = ALIASES.get(token, token)
-    sym = keysym_for(token)
-    if sym == 0:
-        raise ValueError(f"unknown key token: {token!r}")
-    code = x11.XKeysymToKeycode(display, sym)
-    if code == 0:
-        raise ValueError(f"no X keycode for keysym 0x{sym:x} ({name})")
-    return code
+    def _focus_is_target(self, focused: int, target: int) -> bool:
+        if focused == target:
+            return True
+        root = Window()
+        parent = Window()
+        children_ptr = ctypes.POINTER(Window)()
+        count = ctypes.c_uint()
+        if not x11.XQueryTree(
+            self.display, target, ctypes.byref(root), ctypes.byref(parent),
+            ctypes.byref(children_ptr), ctypes.byref(count),
+        ):
+            return False
+        try:
+            return any(children_ptr[i] == focused for i in range(count.value))
+        finally:
+            if children_ptr:
+                x11.XFree(ctypes.cast(children_ptr, ctypes.c_void_p))
 
+    def activate(self, window: int, strict: bool = True, retries: int = 5) -> bool:
+        event_buf = ctypes.create_string_buffer(192)
+        event = ctypes.cast(event_buf, ctypes.POINTER(ClientMessageEvent)).contents
+        event.type = 33  # ClientMessage
+        event.window = window
+        event.message_type = x11.XInternAtom(self.display, b"_NET_ACTIVE_WINDOW", False)
+        event.format = 32
+        event.data[0] = 1  # request from normal application
+        event.data[1] = CurrentTime
+        for _ in range(retries):
+            x11.XSendEvent(
+                self.display, x11.XDefaultRootWindow(self.display), False,
+                SubstructureRedirectMask | SubstructureNotifyMask, event_buf,
+            )
+            x11.XSetInputFocus(self.display, window, RevertToParent, CurrentTime)
+            x11.XRaiseWindow(self.display, window)
+            x11.XFlush(self.display)
+            time.sleep(0.08)
+            focused = Window()
+            revert = ctypes.c_int()
+            x11.XGetInputFocus(self.display, ctypes.byref(focused), ctypes.byref(revert))
+            if self._focus_is_target(focused.value, window):
+                return True
+            if not strict:
+                return True
+        raise RuntimeError(
+            f"X input focus is 0x{focused.value:x}, wanted 0x{window:x}"
+        )
 
-def press_key(display: int, token: str, delay: float) -> None:
-    code = keycode(display, token)
-    xtst.XTestFakeKeyEvent(display, code, True, CurrentTime)
-    x11.XFlush(display)
-    time.sleep(delay)
-    xtst.XTestFakeKeyEvent(display, code, False, CurrentTime)
-    x11.XFlush(display)
-    time.sleep(delay)
+    def keysym_for(self, token: str) -> int:
+        name = ALIASES.get(token, token)
+        sym = x11.XStringToKeysym(name.encode("utf-8"))
+        if sym == 0 and len(token) == 1:
+            sym = ord(token)
+        return sym
 
+    def keycode(self, token: str) -> int:
+        sym = self.keysym_for(token)
+        if sym == 0:
+            raise ValueError(f"unknown key token: {token!r}")
+        code = x11.XKeysymToKeycode(self.display, sym)
+        if code == 0:
+            raise ValueError(f"no X keycode for keysym 0x{sym:x} ({token})")
+        return code
 
-def main(argv: list[str]) -> int:
-    if len(argv) < 3:
-        print("usage: xtest_input.py WINDOW TOKENS [DELAY_MS]", file=sys.stderr)
-        return 2
-    window = int(argv[1], 0)
-    delay = int(argv[3]) / 1000.0 if len(argv) > 3 else 0.06
-    display = x11.XOpenDisplay(os.environ.get("DISPLAY", ":1").encode())
-    if not display:
-        print("cannot open X display", file=sys.stderr)
-        return 1
-    try:
-        activate(display, window)
+    def press_key(self, token: str, delay: float) -> None:
+        code = self.keycode(token)
+        xtst.XTestFakeKeyEvent(self.display, code, True, CurrentTime)
+        x11.XFlush(self.display)
+        time.sleep(delay)
+        xtst.XTestFakeKeyEvent(self.display, code, False, CurrentTime)
+        x11.XFlush(self.display)
+        time.sleep(delay)
+
+    def send(self, token: str, delay: float) -> None:
+        if len(token) > 1 and self.keysym_for(token) == 0:
+            for char in token:
+                self.send(char, delay)
+            return
+        try:
+            self.press_key(token, delay)
+        except ValueError:
+            fallback = TRANSLIT.get(token)
+            if fallback is None:
+                raise
+            for char in fallback:
+                self.send(char, delay)
+
+    def send_tokens(self, window: int, tokens: list[str], delay_ms: int = 60) -> None:
+        self.activate(window, strict=True)
+        delay = delay_ms / 1000.0
         origin_x = ctypes.c_int()
         origin_y = ctypes.c_int()
         child = Window()
         x11.XTranslateCoordinates(
-            display, window, x11.XDefaultRootWindow(display), 0, 0,
+            self.display, window, x11.XDefaultRootWindow(self.display), 0, 0,
             ctypes.byref(origin_x), ctypes.byref(origin_y), ctypes.byref(child),
         )
-        for raw in argv[2].split(","):
-            token = raw.strip()
+        for raw in tokens:
+            token = str(raw).strip()
             if not token:
                 continue
             if token.startswith("pause:"):
@@ -197,34 +247,29 @@ def main(argv: list[str]) -> int:
                     raise ValueError(f"bad click token: {token}")
                 x, y = int(coords[0]), int(coords[1])
                 xtst.XTestFakeMotionEvent(
-                    display, -1, origin_x.value + x, origin_y.value + y, CurrentTime,
+                    self.display, -1, origin_x.value + x, origin_y.value + y, CurrentTime,
                 )
-                x11.XFlush(display)
+                x11.XFlush(self.display)
                 time.sleep(0.05)
-                xtst.XTestFakeButtonEvent(display, 1, True, CurrentTime)
-                x11.XFlush(display)
+                xtst.XTestFakeButtonEvent(self.display, 1, True, CurrentTime)
+                x11.XFlush(self.display)
                 time.sleep(delay)
-                xtst.XTestFakeButtonEvent(display, 1, False, CurrentTime)
-                x11.XFlush(display)
+                xtst.XTestFakeButtonEvent(self.display, 1, False, CurrentTime)
+                x11.XFlush(self.display)
                 time.sleep(delay)
                 continue
-            def send(token: str) -> None:
-                if len(token) > 1 and keysym_for(token) == 0:
-                    for char in token:
-                        send(char)
-                else:
-                    try:
-                        press_key(display, token, delay)
-                    except ValueError:
-                        fallback = TRANSLIT.get(token)
-                        if not fallback:
-                            raise
-                        for char in fallback:
-                            send(char)
+            self.send(token, delay)
 
-            send(token)
-    finally:
-        x11.XCloseDisplay(display)
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 3:
+        print("usage: xtest_input.py WINDOW TOKENS [DELAY_MS]", file=sys.stderr)
+        return 2
+    window = int(argv[1], 0)
+    delay = int(argv[3]) / 1000.0 if len(argv) > 3 else 0.06
+    tokens = [part.strip() for part in argv[2].split(",") if part.strip()]
+    with XTestClient() as client:
+        client.send_tokens(window, tokens, delay=int(delay * 1000))
     return 0
 
 
