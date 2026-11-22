@@ -1,0 +1,347 @@
+{
+  "source": "REA decompilation of 0x2bffd",
+  "frames": [
+    {
+      "scene": 1,
+      "file": "fr00101.seq",
+      "cond": "byte(0x5e31)==0",
+      "source_line": 145
+    },
+    {
+      "scene": 1,
+      "file": "fr00103.seq",
+      "cond": "byte(0xf2fb)==0",
+      "source_line": 154
+    },
+    {
+      "scene": 1,
+      "file": "fr00104.seq",
+      "cond": "byte(0xf2fb)==1",
+      "source_line": 163
+    },
+    {
+      "scene": 1,
+      "file": "fr00107.seq",
+      "cond": "byte(0x5fa7)==0",
+      "source_line": 171
+    },
+    {
+      "scene": 4,
+      "file": "fr04!01.seq",
+      "cond": "byte(0xf306)==0",
+      "source_line": 183
+    },
+    {
+      "scene": 4,
+      "file": "fr04!02.seq",
+      "cond": "byte(0xf306)==1",
+      "source_line": 191
+    },
+    {
+      "scene": 5,
+      "file": "fr05!02.seq",
+      "cond": "byte(0x5fab)==0",
+      "source_line": 202
+    },
+    {
+      "scene": 5,
+      "file": "fr05!01.seq",
+      "cond": "byte(0x5fab)==1",
+      "source_line": 210
+    },
+    {
+      "scene": 8,
+      "file": "fr08!01.seq",
+      "cond": "byte(0xf319)==1",
+      "source_line": 221
+    },
+    {
+      "scene": 9,
+      "file": "fr00901.seq",
+      "cond": "dword(0x6658)==0x42d",
+      "source_line": 232
+    },
+    {
+      "scene": 9,
+      "file": "fr00902.seq",
+      "cond": "byte(0x5ef2)==0",
+      "source_line": 241
+    },
+    {
+      "scene": 9,
+      "file": "fr00903.seq",
+      "cond": "byte(0x5fb6)==0",
+      "source_line": 250
+    },
+    {
+      "scene": 9,
+      "file": "fr00904.seq",
+      "cond": "byte(0x5fb3)==0",
+      "source_line": 259
+    },
+    {
+      "scene": 9,
+      "file": "fr00905.seq",
+      "cond": "byte(0x5fb0)==0",
+      "source_line": 267
+    },
+    {
+      "scene": 10,
+      "file": "fr10!01.seq",
+      "cond": "byte(0x525e)!=3",
+      "source_line": 278
+    },
+    {
+      "scene": 10,
+      "file": "fr10!02.seq",
+      "cond": "byte(0x5fb6)==0",
+      "source_line": 286
+    },
+    {
+      "scene": 11,
+      "file": "fr11!01.seq",
+      "cond": "dword(0x46c0)!=10",
+      "source_line": 296
+    },
+    {
+      "scene": 14,
+      "file": "fr14!01.seq",
+      "cond": "byte(0x52c9)!=3",
+      "source_line": 308
+    },
+    {
+      "scene": 14,
+      "file": "fr14!02.seq",
+      "cond": "byte(0xf329)==3",
+      "source_line": 316
+    },
+    {
+      "scene": 21,
+      "file": "fr02101.seq",
+      "cond": "room==0x44&&dword(0x685a)==0x62be",
+      "source_line": 328
+    },
+    {
+      "scene": 21,
+      "file": "fr02102.seq",
+      "cond": "room==0x45",
+      "source_line": 337
+    },
+    {
+      "scene": 21,
+      "file": "fr02103.seq",
+      "cond": "room==0x45&&byte(0x5ff9)==2",
+      "source_line": 346
+    },
+    {
+      "scene": 21,
+      "file": "fr02104.seq",
+      "cond": "room==0x45&&byte(0x5ff9)==4",
+      "source_line": 355
+    },
+    {
+      "scene": 21,
+      "file": "fr02105.seq",
+      "cond": "room==0x45&&dword(0x686a)==0x62f5",
+      "source_line": 363
+    },
+    {
+      "scene": 28,
+      "file": "fr02801.seq",
+      "cond": "room==byte(0x4928)",
+      "source_line": 374
+    },
+    {
+      "scene": 28,
+      "file": "fr02802.seq",
+      "cond": "room!=byte(0x4928)",
+      "source_line": 382
+    },
+    {
+      "scene": 36,
+      "file": "fr03601.seq",
+      "cond": "byte(0xf3f3)==1",
+      "source_line": 392
+    },
+    {
+      "scene": 37,
+      "file": "fr03701.seq",
+      "cond": "byte(0xf3f8)==1",
+      "source_line": 402
+    },
+    {
+      "scene": 38,
+      "file": "fr03802.seq",
+      "cond": "byte(0xf3ff)==1",
+      "source_line": 412
+    },
+    {
+      "scene": 43,
+      "file": "fr04301.seq",
+      "cond": "byte(0xf385)==room",
+      "source_line": 423
+    },
+    {
+      "scene": 47,
+      "file": "fr04701.seq",
+      "cond": "room==byte(0x4b5c)",
+      "source_line": 433
+    },
+    {
+      "scene": 48,
+      "file": "fr04801.seq",
+      "cond": "byte(0xf386)==room",
+      "source_line": 443
+    },
+    {
+      "scene": 49,
+      "file": "fr04901.seq",
+      "cond": "room==byte(0x4b9a)",
+      "source_line": 454
+    },
+    {
+      "scene": 49,
+      "file": "fr04902.seq",
+      "cond": "byte(0xf38d)==2",
+      "source_line": 462
+    },
+    {
+      "scene": 91,
+      "file": "fr09101.seq",
+      "cond": "byte(0xf3a2)==0",
+      "source_line": 472
+    },
+    {
+      "scene": 94,
+      "file": "fr09401.seq",
+      "cond": "byte(0xf3b1)==3",
+      "source_line": 482
+    },
+    {
+      "scene": 65,
+      "file": "fr06501.seq",
+      "cond": "dword(0xb41e)==0x7d",
+      "source_line": 492
+    },
+    {
+      "scene": 75,
+      "file": "fr07501.seq",
+      "cond": "byte(0x605f)==0",
+      "source_line": 502
+    },
+    {
+      "scene": 78,
+      "file": "fr07801.seq",
+      "cond": "byte(0xf36c)==2",
+      "source_line": 513
+    },
+    {
+      "scene": 78,
+      "file": "fr07802.seq",
+      "cond": "byte(0xf36c)==0||byte(0xf36c)==3",
+      "source_line": 521
+    },
+    {
+      "scene": 111,
+      "file": "fr11102.seq",
+      "cond": "byte(0xf41c)==0&&byte(0xf418)==0",
+      "source_line": 533
+    },
+    {
+      "scene": 111,
+      "file": "fr11101.seq",
+      "cond": "byte(0xf41c)==0&&byte(0xf418)==1",
+      "source_line": 541
+    },
+    {
+      "scene": 118,
+      "file": "fr11801.seq",
+      "cond": "byte(0xf439)==0",
+      "source_line": 553
+    },
+    {
+      "scene": 118,
+      "file": "fr11802.seq",
+      "cond": "byte(0xf431)!=3&&room!=0xaf",
+      "source_line": 561
+    },
+    {
+      "scene": 122,
+      "file": "fr12201.seq",
+      "cond": "byte(0xf440)==1",
+      "source_line": 571
+    },
+    {
+      "scene": 124,
+      "file": "fr12401.seq",
+      "cond": "byte(0xf445)==1",
+      "source_line": 581
+    },
+    {
+      "scene": 125,
+      "file": "fr12501.seq",
+      "cond": "byte(0xf449)==1",
+      "source_line": 591
+    },
+    {
+      "scene": 126,
+      "file": "fr12601.seq",
+      "cond": "byte(0x6103)==0",
+      "source_line": 601
+    },
+    {
+      "scene": 127,
+      "file": "fr12701.seq",
+      "cond": "byte(0xf44e)==0",
+      "source_line": 612
+    },
+    {
+      "scene": 127,
+      "file": "fr12704.seq",
+      "cond": "dword(0xf452)==0xc3&&byte(0xf44f)==0",
+      "source_line": 622
+    },
+    {
+      "scene": 127,
+      "file": "fr12703.seq",
+      "cond": "dword(0xf452)==0xc3&&byte(0xf44f)==1",
+      "source_line": 630
+    },
+    {
+      "scene": 127,
+      "file": "fr12702.seq",
+      "cond": "byte(0xf44f)==0",
+      "source_line": 639
+    },
+    {
+      "scene": 130,
+      "file": "fr13001.seq",
+      "cond": "byte(0xf456)!=0&&byte(0xf456)<3",
+      "source_line": 650
+    },
+    {
+      "scene": 130,
+      "file": "fr13002.seq",
+      "cond": "byte(0xf456)==0x1e",
+      "source_line": 658
+    },
+    {
+      "scene": 132,
+      "file": "fr13201.seq",
+      "cond": "dword(0xb894)==0xe9",
+      "source_line": 668
+    },
+    {
+      "scene": 134,
+      "file": "fr13402.seq",
+      "cond": "byte(0xf45e)==1",
+      "source_line": 679
+    },
+    {
+      "scene": 134,
+      "file": "fr13401.seq",
+      "cond": "dword(0x6bc4)!=0",
+      "source_line": 687
+    }
+  ]
+}

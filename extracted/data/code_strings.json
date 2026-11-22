@@ -1,0 +1,100 @@
+{
+  "source":"HEXPRG.EXE",
+  "pointer_mapping":"segment * 16 + offset - 0x9a00",
+  "pools":[
+    {"name":"take","segment":5973,"offset":8107,"messages":[
+      {"key":"take.0","text":"Bitte geben Sie genau an, was Sie nehmen wollen."},
+      {"key":"take.1","text":"haben Sie schon."},
+      {"key":"take.2","text":"können Sie nicht nehmen!"},
+      {"key":"take.3","text":"Sie haben "},
+      {"key":"take.4","text":"genommen."},
+      {"key":"take.5","text":"ist zu!"},
+      {"key":"take.6","text":"befindet sich nicht in "},
+      {"key":"take.7","text":"."}
+    ]},
+    {"name":"parser","segment":5973,"offset":8869,"messages":[
+      {"key":"parser.0","text":"Ich kann Ihren Satz leider nicht verstehen."},
+      {"key":"parser.1","text":"liegt jetzt hier auf dem Boden."},
+      {"key":"parser.2","text":"liegen jetzt hier auf dem Boden."},
+      {"key":"parser.3","text":"Das ist leider nicht möglich."},
+      {"key":"parser.4","text":"ist zu!"},
+      {"key":"parser.5","text":"ist zu klein für "},
+      {"key":"parser.6","text":"."},
+      {"key":"parser.7","text":"befindet sich nun in "}
+    ]},
+    {"name":"examine","segment":5973,"offset":9771,"messages":[
+      {"key":"examine.0","text":"Es ist finster hier, Sie werden Licht brauchen."},
+      {"key":"examine.1","text":"Ihre Kerze verbreitet einen flackernden Lichtschein."},
+      {"key":"examine.2","text":"Ihre Petroleumfunzel brennt und verbreitet einen flackernden Lichtschein."},
+      {"key":"examine.3","text":"haben keine besonderen Merkmale."},
+      {"key":"examine.4","text":"hat keine besonderen Merkmale."},
+      {"key":"examine.5","text":"ist zu."},
+      {"key":"examine.6","text":"ist offen."},
+      {"key":"examine.7","text":"Hier befindet sich "},
+      {"key":"examine.8","text":"Hier befinden sich "},
+      {"key":"examine.9","text":", "},
+      {"key":"examine.10","text":"."},
+      {"key":"examine.11","text":" und "},
+      {"key":"examine.12","text":"ist offen und enthält "},
+      {"key":"examine.13","text":"nichts."}
+    ]},
+    {"name":"move","segment":6951,"offset":0,"messages":[
+      {"key":"move.0","text":"Da sind Sie bereits."},
+      {"key":"move.1","text":"Das ist von hier aus nicht erreichbar."},
+      {"key":"move.2","text":"versperrt Ihnen den Weg."},
+      {"key":"move.3","text":"Wegen der hier herrschenden Finsternis sehen Sie nicht, wohin Sie eigentlich laufen."},
+      {"key":"move.4","text":"Ihre Kerze verbreitet einen flackernden Lichtschein."},
+      {"key":"move.5","text":"Ihre Petroleumfunzel verbreitet einen flackernden Lichtschein."}
+    ]},
+    {"name":"door","segment":5973,"offset":3552,"messages":[
+      {"key":"door.0","text":"Eine solche Tür gibt es hier nicht!"},
+      {"key":"door.1","text":"türe"},
+      {"key":"door.2","text":"Vermutlich meinen Sie \"öffne\"..."},
+      {"key":"door.3","text":"Ein Objekt \""},
+      {"key":"door.4","text":"\" befindet sich nicht an diesem Ort."},
+      {"key":"door.5","text":"Diesen Satz verstehe ich nicht."},
+      {"key":"door.6","text":"jump"},
+      {"key":"door.7","text":"objekt"},
+      {"key":"door.8","text":"mem"},
+      {"key":"door.9","text":" Bytes noch verfügbar."},
+      {"key":"door.10","text":"info1"},
+      {"key":"door.11","text":"Informationstatus 1;"},
+      {"key":"door.12","text":"info0"},
+      {"key":"door.13","text":"Informationstatus 0;"},
+      {"key":"door.14","text":"Sie benötigen das Wort \""},
+      {"key":"door.15","text":"\" nicht, um das Spiel zu lösen."},
+      {"key":"door.16","text":"Der Begriff \""},
+      {"key":"door.17","text":"\" ist nicht in meinem Wortschatz."},
+      {"key":"door.18","text":"Der Ausdruck \""},
+      {"key":"door.19","text":"\" ist mir nicht bekannt."},
+      {"key":"door.20","text":"verbz: "},
+      {"key":"door.21","text":"ow[1]: "},
+      {"key":"door.22","text":"ow[2]: "},
+      {"key":"door.23","text":"ro: "},
+      {"key":"door.24","text":"Bildnummer: "}
+    ]},
+    {"name":"ignite","segment":5973,"offset":8042,"messages":[
+      {"key":"ignite.0","text":"Das kann man nicht anzünden."}
+    ]},
+    {"name":"openclose","segment":5973,"offset":12590,"messages":[
+      {"key":"openclose.0","text":"kann man nicht öffnen."},
+      {"key":"openclose.1","text":"ist bereits offen."},
+      {"key":"openclose.2","text":"ist jetzt offen."},
+      {"key":"openclose.3","text":"ist jetzt zu."},
+      {"key":"openclose.4","text":"kann man nicht schließen."},
+      {"key":"openclose.5","text":"ist bereits zu."}
+    ]},
+    {"name":"drop","segment":5973,"offset":8794,"messages":[
+      {"key":"drop.0","text":"Bitte geben Sie genau an, was Sie weglegen wollen."},
+      {"key":"drop.1","text":"haben Sie ja gar nicht!"}
+    ]},
+    {"name":"inventory","segment":5973,"offset":11873,"messages":[
+      {"key":"inventory.0","text":" Edelsteinsplitter, "},
+      {"key":"inventory.1","text":"Sie haben "},
+      {"key":"inventory.2","text":", "},
+      {"key":"inventory.3","text":"nichts."},
+      {"key":"inventory.4","text":"."},
+      {"key":"inventory.5","text":"und "}
+    ]}
+  ]
+}
