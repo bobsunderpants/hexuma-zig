@@ -1,6 +1,8 @@
 const std = @import("std");
 const locale_data = @import("locale_data.zig");
 const util = @import("util.zig");
+const overlay_rules = @import("overlay_rules.zig");
+const overlay_eval = @import("overlay_eval.zig");
 
 pub const Locale = enum { de, en };
 
@@ -212,6 +214,9 @@ pub const Game = struct {
     root: std.json.Value,
     locale: Locale,
     room: i64 = 1,
+    /// Original globals 0xbe5c/0xbe5e for the current parser command.
+    object_slot: i64 = 0,
+    object2_slot: i64 = 0,
     /// Original global 0x32d0. Normally derived from the current BILD scene;
     /// kept separately so tools can inspect VORS records independently.
     picture_override: ?i64 = null,
@@ -229,6 +234,8 @@ pub const Game = struct {
     /// Original ';' command menus from OBLISTE.BIN, indexed by room id.
     action_menu: [][]const []const u8 = &.{},
     overlays: []Overlay = &.{},
+    /// REA-derived compiled room-action rules from HEXUMA.OVR.
+    overlay_db: ?overlay_rules.Database = null,
     /// Complete REA-derived runtime VORS label overrides, in original branch
     /// order. Later matching entries overwrite earlier ones.
     vors_overrides: []VorsOverride = &.{},
@@ -474,6 +481,14 @@ pub const Game = struct {
                     }
                 }
             }
+        } else |_| {}
+
+        const overlay_rules_path = try util.join(allocator, &.{ extracted_dir, "data", "overlay_rules.json" });
+        if (util.readFile(allocator, overlay_rules_path)) |rules_bytes| {
+            game.overlay_db = overlay_rules.parse(allocator, rules_bytes) catch |err| blk: {
+                std.debug.print("overlay rules parse error: {s}\n", .{@errorName(err)});
+                break :blk null;
+            };
         } else |_| {}
 
         const vors_path = try util.join(allocator, &.{ extracted_dir, "data", "vors_overrides.json" });
@@ -1101,6 +1116,229 @@ pub const Game = struct {
         return out.toOwnedSlice(self.allocator);
     }
 
+    /// Mutable view of the original globals that OVR rules read and write.
+    const OverlayState = struct {
+        room: i64,
+        verb: i64,
+        object: i64,
+        object2: i64,
+        score: i64,
+    };
+
+    const OverlayContext = struct {
+        game: *Game,
+        state: *OverlayState,
+
+        fn context(self: *OverlayContext) overlay_eval.Context {
+            return .{
+                .ptr = @ptrCast(self),
+                .read_var = readVar,
+                .write_var = writeVar,
+                .read_flag = readFlag,
+                .write_flag = writeFlag,
+                .message = messageForId,
+            };
+        }
+
+        fn cast(ptr: *anyopaque) *OverlayContext {
+            return @ptrCast(@alignCast(ptr));
+        }
+
+        fn readVar(ptr: *anyopaque, name: []const u8) i64 {
+            const self = cast(ptr);
+            if (std.mem.eql(u8, name, "room")) return self.state.room;
+            if (std.mem.eql(u8, name, "verb")) return self.state.verb;
+            if (std.mem.eql(u8, name, "object")) return self.state.object;
+            if (std.mem.eql(u8, name, "object2")) return self.state.object2;
+            if (std.mem.eql(u8, name, "score")) return self.state.score;
+            if (std.mem.eql(u8, name, "scene")) return self.game.pictureValue();
+            if (std.mem.eql(u8, name, "true")) return 1;
+            if (std.mem.eql(u8, name, "pending_room")) {
+                if (self.game.words.get(0xc9be)) |value| return value;
+                return self.game.flags.get(0xc9be) orelse 0;
+            }
+            // Ghidra locals have no stable original-global counterpart.
+            return 0;
+        }
+
+        fn writeVar(ptr: *anyopaque, name: []const u8, value: i64) void {
+            const self = cast(ptr);
+            if (std.mem.eql(u8, name, "room")) {
+                self.state.room = value;
+            } else if (std.mem.eql(u8, name, "verb")) {
+                self.state.verb = value;
+            } else if (std.mem.eql(u8, name, "object")) {
+                self.state.object = value;
+            } else if (std.mem.eql(u8, name, "object2")) {
+                self.state.object2 = value;
+            } else if (std.mem.eql(u8, name, "score")) {
+                self.state.score = value;
+            } else if (std.mem.eql(u8, name, "pending_room")) {
+                self.game.words.put(0xc9be, @truncate(@as(u64, @bitCast(value)))) catch {};
+            }
+        }
+
+        fn readFlag(ptr: *anyopaque, address: i64) i64 {
+            const self = cast(ptr);
+            if (address == 0xbe1b) return self.state.room;
+            if (address == 0xcac2) return self.state.verb;
+            if (address == 0xbe5c) return self.state.object;
+            if (address == 0xbe5e) return self.state.object2;
+            if (address == 0xcae4) return self.state.score;
+            if (address == 0xc918) return self.game.pictureValue();
+            if (self.game.dword_flags.get(address)) |value| return value;
+            if (self.game.words.get(address)) |value| return value;
+            return self.game.flags.get(address) orelse 0;
+        }
+
+        fn writeFlag(ptr: *anyopaque, address: i64, value: i64) void {
+            const self = cast(ptr);
+            if (address == 0xbe1b) {
+                self.state.room = value;
+            } else if (address == 0xcac2) {
+                self.state.verb = value;
+            } else if (address == 0xbe5c) {
+                self.state.object = value;
+            } else if (address == 0xbe5e) {
+                self.state.object2 = value;
+            } else if (address == 0xcae4) {
+                self.state.score = value;
+            } else if (address == 0xc918) {
+                self.game.picture_override = @mod(value, 256);
+            }
+            if (self.game.dword_flags.contains(address)) {
+                self.game.dword_flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            } else if (self.game.words.contains(address)) {
+                self.game.words.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            } else {
+                self.game.flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            }
+        }
+
+        fn messageForId(ptr: *anyopaque, id: i64) []const u8 {
+            const self = cast(ptr);
+            return self.game.textForId(id) orelse "";
+        }
+    };
+
+    /// Apply the REA-derived HEXUMA.OVR room/action rules to one command.
+    /// Overlay messages replace the generic command response; state-only rules
+    /// leave it intact, matching the original dispatcher.
+    /// Reproduce the prelude of the original effect dispatcher at 0x11be9.
+    /// It resets per-command globals, derives the two hotspot-exclusion flags,
+    /// and returns false exactly when the original returns before calling any
+    /// overlay unit.
+    fn overlayPrelude(self: *Game, verb: i64) !bool {
+        try self.flags.put(0xcae8, 0);
+        try self.flags.put(0xcaea, 0);
+        try self.flags.put(0xc9c0, 0);
+        try self.flags.put(0xf2f9, 0);
+        try self.flags.put(0xf2fa, 0);
+
+        if (self.room == 0xb8) try self.flags.put(0x3d94, 1);
+        if (self.room == 0xbd) try self.flags.put(0x3dc6, 1);
+        if (self.room == 0xc2) try self.flags.put(0x3e4a, 1);
+
+        if ((self.flags.get(0x5e03) orelse 0) == 1) {
+            const gate = self.readGlobal(0x44dc);
+            if (gate == -1 or gate == self.room) {
+                try self.flags.put(0xf2f9, 1);
+                try self.flags.put(0xf2fa, 0);
+            }
+        }
+        if ((self.flags.get(0x5f71) orelse 0) == 1) {
+            const gate = self.readGlobal(0x47b8);
+            if (gate == -1 or gate == self.room) {
+                try self.flags.put(0xf2f9, (self.flags.get(0xf2f9) orelse 0) + 2);
+                try self.flags.put(0xf2fa, 0);
+            }
+        }
+
+        const f2f9 = self.flags.get(0xf2f9) orelse 0;
+        const room = self.room;
+        if (f2f9 == 0 and verb == 3) {
+            const excluded = room == 0x11 or room == 0x10 or room == 0x0f or
+                room == 0x0c or room == 0x0d or
+                (room > 0x21 and room < 0x26) or room == 0x5e or room == 0x5f or
+                (room > 0xa3 and room < 0xa9);
+            if (excluded) {
+                try self.flags.put(0xf2fa, 1);
+                return false;
+            }
+        }
+        if ((self.flags.get(0xf2fa) orelse 0) != 1) try self.flags.put(0xf2fa, 0);
+        return true;
+    }
+
+    fn readGlobal(self: *const Game, address: i64) i64 {
+        if (self.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
+        if (self.words.get(address)) |value| return @as(i16, @bitCast(value));
+        return self.flags.get(address) orelse 0;
+    }
+
+    fn withOverlay(self: *Game, base: []const u8, verb: i64, object_id: i64) ![]const u8 {
+        if (!try self.overlayPrelude(verb)) return base;
+        const db = self.overlay_db orelse return base;
+        var state = OverlayState{
+            .room = self.room,
+            .verb = verb,
+            .object = object_id,
+            .object2 = self.object2_slot,
+            .score = @intCast(self.score),
+        };
+        var context = OverlayContext{ .game = self, .state = &state };
+        const result = try overlay_eval.run(self.allocator, db, context.context(), state.room);
+
+        self.room = state.room;
+        self.score = @intCast(@max(0, state.score));
+        self.object_slot = state.object;
+        self.object2_slot = state.object2;
+        if (result.picture) |picture| self.picture_override = picture;
+        if (result.messages.items.len == 0) return base;
+
+        var out = std.ArrayList(u8).empty;
+        const w = out.writer(self.allocator);
+        for (result.messages.items, 0..) |text, i| {
+            if (i != 0) try w.writeByte('\n');
+            try w.writeAll(text);
+        }
+        return out.toOwnedSlice(self.allocator);
+    }
+
+    /// Diagnostic entry point for the REA-derived rule database. It reports the
+    /// messages and picture changes that would be produced for one command.
+    pub fn overlayDebug(self: *Game, verb: i64, object: i64, object2: i64) ![]const u8 {
+        const allowed = try self.overlayPrelude(verb);
+        const db = self.overlay_db orelse return "overlay-db: missing\n";
+        var state = OverlayState{
+            .room = self.room,
+            .verb = verb,
+            .object = object,
+            .object2 = object2,
+            .score = @intCast(self.score),
+        };
+        var context = OverlayContext{ .game = self, .state = &state };
+        const result = try overlay_eval.run(self.allocator, db, context.context(), state.room);
+        var out = std.ArrayList(u8).empty;
+        const w = out.writer(self.allocator);
+        try w.print("room={d} verb={d} object={d} object2={d} allowed={s} f2f9={d} f2fa={d} returned={s}\n", .{
+            state.room,
+            verb,
+            object,
+            object2,
+            if (allowed) "yes" else "no",
+            self.flags.get(0xf2f9) orelse 0,
+            self.flags.get(0xf2fa) orelse 0,
+            if (result.returned) "yes" else "no",
+        });
+        for (result.message_ids.items, 0..) |id, i| {
+            const text = if (i < result.messages.items.len) result.messages.items[i] else "";
+            try w.print("msg 0x{x}: {s}\n", .{ id, text });
+        }
+        if (result.picture) |picture| try w.print("picture {d}\n", .{picture});
+        return out.toOwnedSlice(self.allocator);
+    }
+
     pub fn execute(self: *Game, raw_input: []const u8) ![]const u8 {
         const input = std.mem.trim(u8, raw_input, " \t\r\n");
         if (input.len == 0) {
@@ -1168,23 +1406,42 @@ pub const Game = struct {
             }
             self.room = if (target < 0) -target else target;
             self.score += 1;
-            return std.fmt.allocPrint(self.allocator, "{s} {s}.", .{ self.tr("Du gehst"), self.directionName(dir) }) catch unreachable;
+            const move_text = std.fmt.allocPrint(self.allocator, "{s} {s}.", .{ self.tr("Du gehst"), self.directionName(dir) }) catch unreachable;
+            self.object_slot = 0;
+            self.object2_slot = 0;
+            return self.withOverlay(move_text, v, 0);
         }
 
         var noun_index: ?i64 = null;
         var noun: []const u8 = "";
+        var noun_token_pos: usize = 0;
         for (tokens.items, 0..) |tok, i| {
             if (i == verb_pos and self.verbId(tok) != null) continue;
             if (self.nounIndex(tok)) |idx| {
                 if (!self.nounVisible(idx)) continue;
                 noun_index = idx;
+                noun_token_pos = i;
                 noun = self.vocabularyWord(idx);
                 break;
             }
         }
+        const object_id: i64 = if (noun_index) |idx| (self.vocabularyId(idx) orelse 0) else 0;
+        var object2_id: i64 = 0;
+        if (noun_index) |first_idx| {
+            for (tokens.items, 0..) |tok, i| {
+                if (i <= noun_token_pos or i == verb_pos) continue;
+                if (self.nounIndex(tok)) |idx| {
+                    if (idx == first_idx or !self.nounVisible(idx)) continue;
+                    object2_id = self.vocabularyId(idx) orelse 0;
+                    break;
+                }
+            }
+        }
+        self.object_slot = object_id;
+        self.object2_slot = object2_id;
 
-        switch (v) {
-            5 => { // inventur, original 0x1755:0x2e93
+        const base: []const u8 = switch (v) {
+            5 => blk: { // inventur, original 0x1755:0x2e93
                 const prefix = if (self.locale == .de)
                     (self.code_msg_by_key.get("inventory.1") orelse "Sie haben ")
                 else
@@ -1194,7 +1451,7 @@ pub const Game = struct {
                         (self.code_msg_by_key.get("inventory.3") orelse "nichts.")
                     else
                         "nothing.";
-                    return std.fmt.allocPrint(self.allocator, "{s}{s}", .{ prefix, nothing }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s}{s}", .{ prefix, nothing }) catch unreachable;
                 }
                 const comma = if (self.locale == .de)
                     (self.code_msg_by_key.get("inventory.2") orelse ", ")
@@ -1214,49 +1471,49 @@ pub const Game = struct {
                     try w.writeAll(self.localizedWord(item));
                 }
                 try w.writeAll(".");
-                return out.toOwnedSlice(self.allocator);
+                break :blk try out.toOwnedSlice(self.allocator);
             },
-            24 => return self.tr("Hilfe"), // hilfe
-            25 => return std.fmt.allocPrint(self.allocator, "{s}: {d}\n{s}: {d}", .{ self.tr("Punkte"), self.score, if (self.locale == .de) "Züge" else "Moves", self.moves }) catch unreachable,
-            50 => {
+            24 => self.tr("Hilfe"), // hilfe
+            25 => std.fmt.allocPrint(self.allocator, "{s}: {d}\n{s}: {d}", .{ self.tr("Punkte"), self.score, if (self.locale == .de) "Züge" else "Moves", self.moves }) catch unreachable,
+            50 => blk: {
                 self.quit_requested = true;
-                return if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
+                break :blk if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
             },
-            1 => { // nimm, original 0x1755:0x203d
+            1 => blk: { // nimm, original 0x1755:0x203d
                 if (noun_index == null or noun.len == 0) {
-                    return self.message("take.0", "Bitte geben Sie genau an, was Sie nehmen wollen.", "Please specify exactly what you want to take.");
+                    break :blk self.message("take.0", "Bitte geben Sie genau an, was Sie nehmen wollen.", "Please specify exactly what you want to take.");
                 }
                 const entry = self.vocabEntry(noun_index.?) orelse {
-                    return self.message("parser.3", "Das ist leider nicht möglich.", "That is not possible.");
+                    break :blk self.message("parser.3", "Das ist leider nicht möglich.", "That is not possible.");
                 };
                 if (self.hasInInventory(noun)) {
                     if (self.locale == .de) {
                         const fragment = self.code_msg_by_key.get("take.1") orelse "haben Sie schon.";
-                        return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                        break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                     }
-                    return std.fmt.allocPrint(self.allocator, "You already have {s}.", .{self.localizedWord(noun)}) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "You already have {s}.", .{self.localizedWord(noun)}) catch unreachable;
                 }
                 // OBNBYT[0] at 0x5140: 0 is scenery, 1 portable, 2 a
                 // container. The original rejects every other class here.
                 if (entry.class != 1 and entry.class != 2) {
                     if (self.locale == .de) {
                         const fragment = self.code_msg_by_key.get("take.2") orelse "können Sie nicht nehmen!";
-                        return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                        break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                     }
-                    return std.fmt.allocPrint(self.allocator, "You cannot take {s}.", .{self.localizedWord(noun)}) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "You cannot take {s}.", .{self.localizedWord(noun)}) catch unreachable;
                 }
                 try self.inventory.append(self.allocator, try self.allocator.dupe(u8, noun));
                 self.score += 1;
                 if (self.locale == .de) {
                     const prefix = self.code_msg_by_key.get("take.3") orelse "Sie haben ";
                     const suffix = self.code_msg_by_key.get("take.4") orelse "genommen.";
-                    return std.fmt.allocPrint(self.allocator, "{s}{s} {s}", .{ prefix, noun, suffix }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s}{s} {s}", .{ prefix, noun, suffix }) catch unreachable;
                 }
-                return std.fmt.allocPrint(self.allocator, "You take {s}.", .{self.localizedWord(noun)}) catch unreachable;
+                break :blk std.fmt.allocPrint(self.allocator, "You take {s}.", .{self.localizedWord(noun)}) catch unreachable;
             },
-            4, 6 => { // öffne / schließe, original 0x1755:0x31a1
+            4, 6 => blk: { // öffne / schließe, original 0x1755:0x31a1
                 if (noun_index == null or noun.len == 0) {
-                    return self.message("parser.0", "Ich kann Ihren Satz leider nicht verstehen.", "I cannot understand your sentence.");
+                    break :blk self.message("parser.0", "Ich kann Ihren Satz leider nicht verstehen.", "I cannot understand your sentence.");
                 }
                 const id = self.vocabularyId(noun_index.?) orelse 0;
                 const class = self.flags.get(id + 0x5140) orelse 0;
@@ -1275,13 +1532,13 @@ pub const Game = struct {
                 }
                 if (self.locale == .de) {
                     const fragment = self.code_msg_by_key.get(key) orelse english;
-                    return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                 }
-                return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ self.localizedWord(noun), english }) catch unreachable;
+                break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ self.localizedWord(noun), english }) catch unreachable;
             },
-            2 => { // lege, original 0x1755:0x2362
+            2 => blk: { // lege, original 0x1755:0x2362
                 if (noun.len == 0) {
-                    return if (self.locale == .de)
+                    break :blk if (self.locale == .de)
                         (self.code_msg_by_key.get("drop.0") orelse "Bitte geben Sie genau an, was Sie weglegen wollen.")
                     else
                         "Please specify exactly what you want to put down.";
@@ -1289,62 +1546,59 @@ pub const Game = struct {
                 if (!self.dropFromInventory(noun)) {
                     if (self.locale == .de) {
                         const fragment = self.code_msg_by_key.get("drop.1") orelse "haben Sie ja gar nicht!";
-                        return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                        break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                     }
-                    return std.fmt.allocPrint(self.allocator, "You do not have {s}.", .{self.localizedWord(noun)}) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "You do not have {s}.", .{self.localizedWord(noun)}) catch unreachable;
                 }
                 if (self.locale == .de) {
                     const fragment = self.code_msg_by_key.get("parser.1") orelse "liegt jetzt hier auf dem Boden.";
-                    return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                 }
-                return std.fmt.allocPrint(self.allocator, "{s} is now on the floor.", .{self.localizedWord(noun)}) catch unreachable;
+                break :blk std.fmt.allocPrint(self.allocator, "{s} is now on the floor.", .{self.localizedWord(noun)}) catch unreachable;
             },
-            8, 9 => { // original handlers 0x1755:0x38cf and 0x373a are empty
-                return "";
-            },
-            48 => { // anzünden, original 0x1755:0x1f87
-                return if (self.locale == .de)
-                    (self.code_msg_by_key.get("ignite.0") orelse "Das kann man nicht anzünden.")
-                else
-                    "That cannot be lit.";
-            },
-            3, 57 => { // untersuche / betrachte, original 0x1755:0x277f
-                if (noun.len == 0) return self.roomObjectListing();
+            8, 9 => "", // original handlers 0x1755:0x38cf and 0x373a are empty
+            48 => if (self.locale == .de)
+                (self.code_msg_by_key.get("ignite.0") orelse "Das kann man nicht anzünden.")
+            else
+                "That cannot be lit.",
+            3, 57 => blk: { // untersuche / betrachte, original 0x1755:0x277f
+                if (noun.len == 0) break :blk try self.roomObjectListing();
                 if (self.locale == .de) {
                     if (noun_index) |idx| {
                         const desc = self.objectDescription(idx);
                         const entry = self.vocabEntry(idx);
                         const suffix = if (entry) |e| try self.containerSuffix(e) else "";
                         if (desc) |text| {
-                            if (suffix.len == 0) return text;
-                            return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ text, suffix }) catch unreachable;
+                            if (suffix.len == 0) break :blk text;
+                            break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ text, suffix }) catch unreachable;
                         }
                         const fragment = self.message("examine.4", "hat keine besonderen Merkmale.", "has no special features.");
-                        const base = std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
-                        if (suffix.len == 0) return base;
-                        return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ base, suffix }) catch unreachable;
+                        const base_text = std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                        if (suffix.len == 0) break :blk base_text;
+                        break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ base_text, suffix }) catch unreachable;
                     }
                 }
                 if (self.hasInInventory(noun) or noun_index != null) {
                     if (self.locale == .en) {
-                        return std.fmt.allocPrint(self.allocator, "You see: {s}.", .{self.localizedWord(noun)}) catch unreachable;
+                        break :blk std.fmt.allocPrint(self.allocator, "You see: {s}.", .{self.localizedWord(noun)}) catch unreachable;
                     }
-                    return std.fmt.allocPrint(self.allocator, "{s}: {s}", .{ noun, self.localizedWord(noun) }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s}: {s}", .{ noun, self.localizedWord(noun) }) catch unreachable;
                 }
                 if (self.locale == .de) {
                     const fragment = self.code_msg_by_key.get("examine.4") orelse "hat keine besonderen Merkmale.";
-                    return std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
                 }
-                return "You see nothing special.";
+                break :blk "You see nothing special.";
             },
-            else => {
+            else => blk: {
                 if (v == 68 or eqIgnoreCase(lower, "quit") or eqIgnoreCase(lower, "ende")) {
                     self.quit_requested = true;
-                    return if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
+                    break :blk if (self.locale == .de) "Auf Wiedersehen." else "Goodbye.";
                 }
-                return self.message("parser.3", "Das ist leider nicht möglich.", "That is not possible.");
+                break :blk self.message("parser.3", "Das ist leider nicht möglich.", "That is not possible.");
             },
-        }
+        };
+        return self.withOverlay(base, v, object_id);
     }
 
     /// Original `.dat` field descriptor. The compact table is REA-derived from

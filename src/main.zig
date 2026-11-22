@@ -1124,6 +1124,29 @@ fn showOverlays(allocator: std.mem.Allocator, extracted_dir: []const u8, room: i
     try stdout.flush();
 }
 
+fn showRules(
+    allocator: std.mem.Allocator,
+    extracted_dir: []const u8,
+    room: i64,
+    verb: i64,
+    object: i64,
+    object2: i64,
+    byte_flags: []const []const u8,
+    dword_flags: []const []const u8,
+) !void {
+    var game = try engine.Game.init(allocator, extracted_dir, .de);
+    defer game.deinit();
+    game.room = room;
+    for (byte_flags) |spec| try applyFlagSpec(&game, spec, false);
+    for (dword_flags) |spec| try applyFlagSpec(&game, spec, true);
+    const report = try game.overlayDebug(verb, object, object2);
+    var stdout_buf: [8192]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_writer.interface;
+    try stdout.writeAll(report);
+    try stdout.flush();
+}
+
 fn applyFlagSpec(game: *engine.Game, spec: []const u8, is_dword: bool) !void {
     const eq = std.mem.indexOfScalar(u8, spec, '=') orelse return error.InvalidFlagSpec;
     const address = std.fmt.parseInt(u32, spec[0..eq], 0) catch return error.InvalidFlagSpec;
@@ -1194,6 +1217,9 @@ pub fn main() !void {
             \\                                           point-and-click X11 window
             \\  hexuma overlays [--room N] [--extracted DIR]
             \\                                           list active FR overlays
+            \\  hexuma rules [--room N] [--verb N] [--object N] [--object2 N]
+            \\              [--flag ADDR=VAL] [--dword ADDR=VAL] [--extracted DIR]
+            \\                                           inspect matching OVR rules
             \\  hexuma vors --picture N [--room N] [--flag ADDR=VAL]
             \\             [--dword ADDR=VAL] [--extracted DIR]
             \\                                           show runtime VORS slots
@@ -1276,6 +1302,40 @@ pub fn main() !void {
             }
         }
         try showOverlays(allocator, extracted_dir, room);
+    } else if (std.mem.eql(u8, command, "rules")) {
+        var extracted_dir: []const u8 = "extracted";
+        var room: i64 = 1;
+        var verb: i64 = 3;
+        var object: i64 = 0;
+        var object2: i64 = 0;
+        var byte_flags = std.ArrayList([]const u8).empty;
+        var dword_flags = std.ArrayList([]const u8).empty;
+        var i: usize = 2;
+        while (i < args.len) : (i += 1) {
+            if (std.mem.eql(u8, args[i], "--extracted") and i + 1 < args.len) {
+                i += 1;
+                extracted_dir = args[i];
+            } else if (std.mem.eql(u8, args[i], "--room") and i + 1 < args.len) {
+                i += 1;
+                room = std.fmt.parseInt(i64, args[i], 0) catch room;
+            } else if (std.mem.eql(u8, args[i], "--verb") and i + 1 < args.len) {
+                i += 1;
+                verb = std.fmt.parseInt(i64, args[i], 0) catch verb;
+            } else if (std.mem.eql(u8, args[i], "--object") and i + 1 < args.len) {
+                i += 1;
+                object = std.fmt.parseInt(i64, args[i], 0) catch object;
+            } else if (std.mem.eql(u8, args[i], "--object2") and i + 1 < args.len) {
+                i += 1;
+                object2 = std.fmt.parseInt(i64, args[i], 0) catch object2;
+            } else if (std.mem.eql(u8, args[i], "--flag") and i + 1 < args.len) {
+                i += 1;
+                try byte_flags.append(allocator, args[i]);
+            } else if (std.mem.eql(u8, args[i], "--dword") and i + 1 < args.len) {
+                i += 1;
+                try dword_flags.append(allocator, args[i]);
+            }
+        }
+        try showRules(allocator, extracted_dir, room, verb, object, object2, byte_flags.items, dword_flags.items);
     } else if (std.mem.eql(u8, command, "vors")) {
         var extracted_dir: []const u8 = "extracted";
         var picture: i64 = -1;
