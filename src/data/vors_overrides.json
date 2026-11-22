@@ -1,0 +1,1398 @@
+{
+  "source": "REA decompilation of 0x2408d",
+  "overrides": [
+    {
+      "record": 1,
+      "slot": 4,
+      "cond": "byte(0x5e31)==0",
+      "text": "Schließe die Haustüre",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 6,
+      "cond": "byte(0xf2fb)==1",
+      "text": " ",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 7,
+      "cond": "byte(0xf2fb)==1",
+      "text": "Untersuche den Lüster",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 9,
+      "cond": "byte(0x5fa7)==0",
+      "text": "Gehe in die Bibliothek",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 0,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 1,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 2,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 3,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 4,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 5,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 6,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 7,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 8,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 1,
+      "slot": 9,
+      "cond": "room==5",
+      "text": "Gehe Süd",
+      "source": "0x2408d.c:93-110"
+    },
+    {
+      "record": 5,
+      "slot": 0,
+      "cond": "byte(0x5fab)==0",
+      "text": "Schließe die Tür",
+      "source": "0x2408d.c:112-119"
+    },
+    {
+      "record": 5,
+      "slot": 0,
+      "cond": "byte(0x5fab)==1",
+      "text": "Öffne die Tür",
+      "source": "0x2408d.c:112-119"
+    },
+    {
+      "record": 9,
+      "slot": 0,
+      "cond": "room==6",
+      "text": "Gehe runter",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 2,
+      "cond": "room==6",
+      "text": " ",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 3,
+      "cond": "room==6",
+      "text": " ",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 1,
+      "cond": "room==6&&byte(0x5fb0)==1",
+      "text": "Öffne die Tür zur Küche",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 1,
+      "cond": "room==6&&byte(0x5fb0)!=1",
+      "text": "Gehe in die Küche",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 0,
+      "cond": "room==9",
+      "text": "Gehe Nord",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 1,
+      "cond": "room==9",
+      "text": " ",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 4,
+      "cond": "room==9",
+      "text": "Gehe Nord",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 2,
+      "cond": "room==9&&byte(0x5fb3)==0",
+      "text": "Gehe ins Kinderzimmer",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 3,
+      "cond": "room==9&&byte(0x5fb6)==0",
+      "text": "Gehe ins Schlafzimmer",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 0,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 1,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 3,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 2,
+      "cond": "room==11",
+      "text": "Gehe West",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 9,
+      "slot": 4,
+      "cond": "room==11",
+      "text": "Gehe West",
+      "source": "0x2408d.c:120-150"
+    },
+    {
+      "record": 10,
+      "slot": 0,
+      "cond": "room==7&&byte(0x5fb6)==1",
+      "text": "Öffne die Tür",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 2,
+      "cond": "room==7&&byte(0x525e)!=3",
+      "text": " ",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 0,
+      "cond": "room==8",
+      "text": " ",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 1,
+      "cond": "room==8",
+      "text": " ",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 2,
+      "cond": "room==8",
+      "text": " ",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 3,
+      "cond": "room==8",
+      "text": "Gehe nach Süden",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 10,
+      "slot": 4,
+      "cond": "room==8",
+      "text": "Gehe nach Süden",
+      "source": "0x2408d.c:151-167"
+    },
+    {
+      "record": 11,
+      "slot": 0,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:168-175"
+    },
+    {
+      "record": 11,
+      "slot": 1,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:168-175"
+    },
+    {
+      "record": 11,
+      "slot": 2,
+      "cond": "room==11",
+      "text": "",
+      "source": "0x2408d.c:168-175"
+    },
+    {
+      "record": 12,
+      "slot": 0,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 12,
+      "slot": 1,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 12,
+      "slot": 2,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 12,
+      "slot": 3,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 12,
+      "slot": 4,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 12,
+      "slot": 5,
+      "cond": "room==13",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:176-184"
+    },
+    {
+      "record": 13,
+      "slot": 0,
+      "cond": "room==15",
+      "text": "Gehe Ost",
+      "source": "0x2408d.c:185-189"
+    },
+    {
+      "record": 14,
+      "slot": 0,
+      "cond": "byte(0x52c9)!=3",
+      "text": " ",
+      "source": "0x2408d.c:190-194"
+    },
+    {
+      "record": 27,
+      "slot": 0,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 1,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 2,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 3,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 4,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 0,
+      "cond": "room==70",
+      "text": "Untersuche das Dickicht",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 1,
+      "cond": "room==70",
+      "text": "Betrachte die Kokospalme",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 2,
+      "cond": "room==70",
+      "text": "Untersuche den Felskegel",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 3,
+      "cond": "room==70",
+      "text": "Betrachte den Urwald",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 4,
+      "cond": "room==70",
+      "text": "Untersuche die Bucht",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 2,
+      "cond": "room==72",
+      "text": "Untersuche den Felskegel",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 27,
+      "slot": 2,
+      "cond": "room==74",
+      "text": "Untersuche den Felskegel",
+      "source": "0x2408d.c:196-215"
+    },
+    {
+      "record": 28,
+      "slot": 0,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 28,
+      "slot": 1,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 28,
+      "slot": 2,
+      "cond": "",
+      "text": " ",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 28,
+      "slot": 0,
+      "cond": "byte(0x6029)==0",
+      "text": "Untersuche die Gestalt",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 28,
+      "slot": 1,
+      "cond": "byte(0x6029)==1",
+      "text": "Betrachte die Sandhügel",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 28,
+      "slot": 2,
+      "cond": "byte(0xf3df)==1",
+      "text": "Untersuche die Seekiste",
+      "source": "0x2408d.c:216-231"
+    },
+    {
+      "record": 29,
+      "slot": 1,
+      "cond": "byte(0x604b)==0",
+      "text": "Schließe die Tür",
+      "source": "0x2408d.c:232-240"
+    },
+    {
+      "record": 29,
+      "slot": 1,
+      "cond": "byte(0x604b)==1",
+      "text": "Öffne die Tür",
+      "source": "0x2408d.c:232-240"
+    },
+    {
+      "record": 29,
+      "slot": 2,
+      "cond": "",
+      "text": "Gehe in die Hütte",
+      "source": "0x2408d.c:232-240"
+    },
+    {
+      "record": 35,
+      "slot": 4,
+      "cond": "room==88",
+      "text": " ",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 1,
+      "cond": "room==87",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 2,
+      "cond": "room==87",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 3,
+      "cond": "room==87",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 4,
+      "cond": "room==87",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 5,
+      "cond": "room==87",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 0,
+      "cond": "room==89",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 1,
+      "cond": "room==89",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 5,
+      "cond": "room==89",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 6,
+      "cond": "room==89",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 7,
+      "cond": "room==89",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 0,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 1,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 2,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 3,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 4,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 5,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 6,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 7,
+      "cond": "room==90",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 0,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 1,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 2,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 3,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 4,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 5,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 6,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 35,
+      "slot": 7,
+      "cond": "room==91",
+      "text": "",
+      "source": "0x2408d.c:241-277"
+    },
+    {
+      "record": 36,
+      "slot": 1,
+      "cond": "room==92",
+      "text": "",
+      "source": "0x2408d.c:278-285"
+    },
+    {
+      "record": 36,
+      "slot": 0,
+      "cond": "room==93",
+      "text": "",
+      "source": "0x2408d.c:278-285"
+    },
+    {
+      "record": 38,
+      "slot": 4,
+      "cond": "room==96",
+      "text": "",
+      "source": "0x2408d.c:286-295"
+    },
+    {
+      "record": 38,
+      "slot": 5,
+      "cond": "room==96",
+      "text": "",
+      "source": "0x2408d.c:286-295"
+    },
+    {
+      "record": 38,
+      "slot": 1,
+      "cond": "room==97",
+      "text": "",
+      "source": "0x2408d.c:286-295"
+    },
+    {
+      "record": 38,
+      "slot": 2,
+      "cond": "room==97",
+      "text": "",
+      "source": "0x2408d.c:286-295"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==146",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==146",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==146",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==146",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 0,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 1,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 2,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 3,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 4,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 5,
+      "cond": "room==147",
+      "text": "Gehe nach Süden",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==147",
+      "text": "Untersuche die Fußstapfen",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 7,
+      "cond": "room==147",
+      "text": "Untersuche die Blätter",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==147",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 0,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 1,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 2,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 3,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 4,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 5,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 7,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==156",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==156",
+      "text": "Untersuche den Findling",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==156",
+      "text": "Betrachte die Sandbank",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 0,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 1,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 2,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 3,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 4,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 5,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 7,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==149",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 0,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 1,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 2,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 3,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 4,
+      "cond": "room==154",
+      "text": "Gehe nach Westen",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 5,
+      "cond": "room==154",
+      "text": "Gehe nach Osten",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 7,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==154",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 0,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 1,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 2,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 3,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 4,
+      "cond": "room==155",
+      "text": "Gehe nach Westen",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 5,
+      "cond": "room==155",
+      "text": "Gehe nach Osten",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 6,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 7,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 8,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 9,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 40,
+      "slot": 10,
+      "cond": "room==155",
+      "text": " ",
+      "source": "0x2408d.c:296-349"
+    },
+    {
+      "record": 43,
+      "slot": 1,
+      "cond": "room!=dword(0x4b3a)",
+      "text": " ",
+      "source": "0x2408d.c:350-354"
+    },
+    {
+      "record": 47,
+      "slot": 2,
+      "cond": "room!=dword(0x4b5c)",
+      "text": " ",
+      "source": "0x2408d.c:355-359"
+    },
+    {
+      "record": 48,
+      "slot": 1,
+      "cond": "room!=dword(0x4b3e)",
+      "text": " ",
+      "source": "0x2408d.c:360-364"
+    },
+    {
+      "record": 49,
+      "slot": 1,
+      "cond": "room!=dword(0x4b9a)",
+      "text": " ",
+      "source": "0x2408d.c:365-369"
+    },
+    {
+      "record": 60,
+      "slot": 0,
+      "cond": "room==127",
+      "text": " ",
+      "source": "0x2408d.c:370-378"
+    },
+    {
+      "record": 60,
+      "slot": 1,
+      "cond": "room==127",
+      "text": " ",
+      "source": "0x2408d.c:370-378"
+    },
+    {
+      "record": 60,
+      "slot": 2,
+      "cond": "room==127",
+      "text": " ",
+      "source": "0x2408d.c:370-378"
+    },
+    {
+      "record": 60,
+      "slot": 3,
+      "cond": "room==127",
+      "text": " ",
+      "source": "0x2408d.c:370-378"
+    },
+    {
+      "record": 60,
+      "slot": 4,
+      "cond": "room==127",
+      "text": " ",
+      "source": "0x2408d.c:370-378"
+    },
+    {
+      "record": 71,
+      "slot": 1,
+      "cond": "room==124",
+      "text": "",
+      "source": "0x2408d.c:380-384"
+    },
+    {
+      "record": 91,
+      "slot": 2,
+      "cond": "byte(0xf3a2)==1",
+      "text": " ",
+      "source": "0x2408d.c:385-389"
+    },
+    {
+      "record": 94,
+      "slot": 1,
+      "cond": "room==31",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 2,
+      "cond": "room==31",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 3,
+      "cond": "room==31",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 4,
+      "cond": "room==31",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 2,
+      "cond": "room==32&&byte(0xf3b1)!=3",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 3,
+      "cond": "room==32&&byte(0xf3b1)!=3",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 4,
+      "cond": "room==32&&byte(0xf3b1)!=3",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 94,
+      "slot": 1,
+      "cond": "room==32&&byte(0xf3b1)==3",
+      "text": " ",
+      "source": "0x2408d.c:390-410"
+    },
+    {
+      "record": 115,
+      "slot": 0,
+      "cond": "room==169",
+      "text": "",
+      "source": "0x2408d.c:411-418"
+    },
+    {
+      "record": 118,
+      "slot": 0,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 1,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 2,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 3,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 4,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 5,
+      "cond": "room==179||room==180",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 4,
+      "cond": "byte(0xf431)==3",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 118,
+      "slot": 4,
+      "cond": "room!=175",
+      "text": "",
+      "source": "0x2408d.c:419-432"
+    },
+    {
+      "record": 123,
+      "slot": 4,
+      "cond": "byte(0x5422)==1&&room==189&&room==dword(0x4a62)",
+      "text": "Untersuche das Holzstück",
+      "source": "0x2408d.c:433-442"
+    },
+    {
+      "record": 123,
+      "slot": 4,
+      "cond": "byte(0x5422)==1&&room==189&&room!=dword(0x4a62)",
+      "text": "",
+      "source": "0x2408d.c:433-442"
+    },
+    {
+      "record": 124,
+      "slot": 1,
+      "cond": "byte(0xf445)==1",
+      "text": "Tauche runter",
+      "source": "0x2408d.c:443-447"
+    },
+    {
+      "record": 129,
+      "slot": 1,
+      "cond": "room==199||room==200",
+      "text": "",
+      "source": "0x2408d.c:448-455"
+    },
+    {
+      "record": 129,
+      "slot": 2,
+      "cond": "room==199||room==200",
+      "text": "",
+      "source": "0x2408d.c:448-455"
+    },
+    {
+      "record": 129,
+      "slot": 3,
+      "cond": "room==199||room==200",
+      "text": "",
+      "source": "0x2408d.c:448-455"
+    },
+    {
+      "record": 130,
+      "slot": 4,
+      "cond": "byte(0xf456)==30||byte(0xf456)==0",
+      "text": "",
+      "source": "0x2408d.c:456-460"
+    },
+    {
+      "record": 132,
+      "slot": 0,
+      "cond": "room==205&&dword(0xb894)!=0",
+      "text": "Gehe runter",
+      "source": "0x2408d.c:461-465"
+    },
+    {
+      "record": 134,
+      "slot": 3,
+      "cond": "dword(0x6bc4)==0",
+      "text": "",
+      "source": "0x2408d.c:466-473"
+    }
+  ]
+}

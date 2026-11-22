@@ -1,0 +1,217 @@
+{
+  "source": "0x2d100 (.dat writer) / 0x31076 (.dat reader), 395 static call sites",
+  "numeric_format": "decimal, no padding (width 0), CRLF after every field",
+  "counts": {
+    "landscapes": 240,
+    "objects": 1060,
+    "slots": 50
+  },
+  "fields": [
+    {
+      "kind": "landscape_word"
+    },
+    {
+      "kind": "landscape_byte"
+    },
+    {
+      "kind": "object_word",
+      "offset": 14332
+    },
+    {
+      "kind": "object_word",
+      "offset": 17566
+    },
+    {
+      "kind": "object_byte",
+      "offset": 20800
+    },
+    {
+      "kind": "object_byte",
+      "offset": 24036
+    },
+    {
+      "kind": "object_word",
+      "offset": 25654
+    },
+    {
+      "kind": "object_word",
+      "offset": 28888
+    },
+    {
+      "kind": "object_byte",
+      "offset": 22418
+    },
+    {
+      "kind": "object_string",
+      "offset": -32686,
+      "width": 255
+    },
+    {
+      "kind": "string",
+      "addr": 14046,
+      "width": 14
+    },
+    {
+      "kind": "string",
+      "addr": 51482,
+      "width": 79
+    },
+    {
+      "kind": "byte",
+      "addr": 48667
+    },
+    {
+      "kind": "word",
+      "from": 51938,
+      "to": 51940
+    },
+    {
+      "kind": "byte",
+      "addr": 52203
+    },
+    {
+      "kind": "word",
+      "addr": 51644
+    },
+    {
+      "kind": "word",
+      "from": 51626,
+      "to": 51628
+    },
+    {
+      "kind": "word",
+      "addr": 62120
+    },
+    {
+      "kind": "byte",
+      "addr": 51480
+    },
+    {
+      "kind": "byte",
+      "from": 62179,
+      "to": 62195
+    },
+    {
+      "kind": "byte",
+      "from": 62200,
+      "to": 62222
+    },
+    {
+      "kind": "word",
+      "addr": 62224
+    },
+    {
+      "kind": "byte",
+      "from": 62226,
+      "to": 62257
+    },
+    {
+      "kind": "word",
+      "from": 62258,
+      "to": 62264
+    },
+    {
+      "kind": "byte",
+      "from": 62266,
+      "to": 62288
+    },
+    {
+      "kind": "word",
+      "addr": 62290
+    },
+    {
+      "kind": "byte",
+      "from": 62292,
+      "to": 62328
+    },
+    {
+      "kind": "byte",
+      "from": 62394,
+      "to": 62465
+    },
+    {
+      "kind": "byte",
+      "from": 62335,
+      "to": 62353
+    },
+    {
+      "kind": "byte",
+      "from": 62466,
+      "to": 62510
+    },
+    {
+      "kind": "byte",
+      "from": 62512,
+      "to": 62528
+    },
+    {
+      "kind": "byte",
+      "from": 62365,
+      "to": 62389
+    },
+    {
+      "kind": "word",
+      "addr": 62390
+    },
+    {
+      "kind": "byte",
+      "from": 62392,
+      "to": 62393
+    },
+    {
+      "kind": "byte",
+      "from": 62530,
+      "to": 62544
+    },
+    {
+      "kind": "word",
+      "addr": 62546
+    },
+    {
+      "kind": "byte",
+      "from": 62548,
+      "to": 62564
+    },
+    {
+      "kind": "byte",
+      "from": 62358,
+      "to": 62364
+    },
+    {
+      "kind": "byte",
+      "from": 62329,
+      "to": 62334
+    },
+    {
+      "kind": "string",
+      "addr": 33234,
+      "width": 255
+    },
+    {
+      "kind": "string",
+      "addr": 33562,
+      "width": 255
+    },
+    {
+      "kind": "string",
+      "addr": 34394,
+      "width": 255
+    },
+    {
+      "kind": "slot_string",
+      "base": 55978,
+      "stride": 101,
+      "count": 50,
+      "width": 100
+    },
+    {
+      "kind": "byte",
+      "addr": 62197
+    },
+    {
+      "kind": "byte",
+      "from": 62153,
+      "to": 62156
+    }
+  ]
+}
