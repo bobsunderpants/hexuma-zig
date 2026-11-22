@@ -34,6 +34,9 @@ pub const Action = union(enum) {
 };
 
 pub const Rule = struct {
+    /// Consecutive rules with the same guard belong to one original if-block.
+    /// The guard is evaluated once per group, before any action mutates state.
+    group: i64,
     when: *Expr,
     actions: []Action,
 };
@@ -58,26 +61,45 @@ pub const Unit = struct {
 };
 
 pub const Database = struct {
+    arena: *std.heap.ArenaAllocator,
     units: []Unit,
+
+    pub fn deinit(self: *Database) void {
+        const parent = self.arena.child_allocator;
+        self.arena.deinit();
+        parent.destroy(self.arena);
+    }
 };
 
 pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Database {
-    const root = try std.json.parseFromSliceLeaky(std.json.Value, allocator, bytes, .{});
+    // The generic JSON tree contains hundreds of thousands of small nodes.
+    // A bump allocator keeps startup time reasonable; the arena is owned by
+    // the database so every parsed slice stays valid for the whole game.
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    arena.* = std.heap.ArenaAllocator.init(allocator);
+    errdefer {
+        arena.deinit();
+        allocator.destroy(arena);
+    }
+    const a = arena.allocator();
+
+    const root = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{});
     const obj = asObject(root) orelse return error.InvalidOverlayRules;
     const units_value = obj.get("units") orelse return error.InvalidOverlayRules;
     const units_array = asArray(units_value) orelse return error.InvalidOverlayRules;
-    const units = try allocator.alloc(Unit, units_array.items.len);
+    const units = try a.alloc(Unit, units_array.items.len);
     for (units_array.items, 0..) |item, i| {
         const unit_obj = asObject(item) orelse return error.InvalidOverlayRules;
         const rules_value = unit_obj.get("rules") orelse return error.InvalidOverlayRules;
         const rules_array = asArray(rules_value) orelse return error.InvalidOverlayRules;
-        const room_ranges = try parseRoomRanges(allocator, unit_obj.get("room_ranges"));
-        const rules = try allocator.alloc(Rule, rules_array.items.len);
+        const room_ranges = try parseRoomRanges(a, unit_obj.get("room_ranges"));
+        const rules = try a.alloc(Rule, rules_array.items.len);
         for (rules_array.items, 0..) |rule_item, j| {
             const rule_obj = asObject(rule_item) orelse return error.InvalidOverlayRules;
             rules[j] = .{
-                .when = try parseExpr(allocator, rule_obj.get("when") orelse return error.InvalidOverlayRules),
-                .actions = try parseActions(allocator, rule_obj.get("actions") orelse return error.InvalidOverlayRules),
+                .group = objectInt(rule_obj, "group"),
+                .when = try parseExpr(a, rule_obj.get("when") orelse return error.InvalidOverlayRules),
+                .actions = try parseActions(a, rule_obj.get("actions") orelse return error.InvalidOverlayRules),
             };
         }
         units[i] = .{
@@ -87,7 +109,7 @@ pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Database {
             .rules = rules,
         };
     }
-    return .{ .units = units };
+    return .{ .arena = arena, .units = units };
 }
 
 fn parseRoomRanges(allocator: std.mem.Allocator, value: ?std.json.Value) ![]RoomRange {

@@ -12,7 +12,11 @@ const lua_sources = [_][]const u8{
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    // The OVR rule database is large; Debug startup takes ~5s while
+    // ReleaseFast starts in ~0.2s. Ship the fast build by default;
+    // `-Doptimize=Debug` still overrides it.
+    b.release_mode = .fast;
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
 
     // Lua 5.4.8 is vendored so the project builds without system packages.
     const lua = b.addLibrary(.{

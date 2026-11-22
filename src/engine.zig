@@ -543,6 +543,7 @@ pub const Game = struct {
         self.words.deinit();
         self.dword_flags.deinit();
         self.strings.deinit();
+        if (self.overlay_db) |*db| db.deinit();
     }
 
     fn tr(self: *const Game, german: []const u8) []const u8 {
@@ -1186,8 +1187,8 @@ pub const Game = struct {
             if (address == 0xbe5e) return self.state.object2;
             if (address == 0xcae4) return self.state.score;
             if (address == 0xc918) return self.game.pictureValue();
-            if (self.game.dword_flags.get(address)) |value| return value;
-            if (self.game.words.get(address)) |value| return value;
+            if (self.game.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
+            if (self.game.words.get(address)) |value| return @as(i16, @bitCast(value));
             return self.game.flags.get(address) orelse 0;
         }
 
@@ -1206,9 +1207,12 @@ pub const Game = struct {
             } else if (address == 0xc918) {
                 self.game.picture_override = @mod(value, 256);
             }
-            if (self.game.dword_flags.contains(address)) {
+            // Ghidra marks overlapping multi-byte globals with a leading '_'.
+            // Values outside the byte range therefore widen the store; -1 is
+            // the common 16-bit sentinel used by the original object tables.
+            if (value > 0xffff or value < -0x80000000 or self.game.dword_flags.contains(address)) {
                 self.game.dword_flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
-            } else if (self.game.words.contains(address)) {
+            } else if (value > 0xff or value == -1 or value < -0x8000 or self.game.words.contains(address)) {
                 self.game.words.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
             } else {
                 self.game.flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
@@ -1222,8 +1226,8 @@ pub const Game = struct {
     };
 
     /// Apply the REA-derived HEXUMA.OVR room/action rules to one command.
-    /// Overlay messages replace the generic command response; state-only rules
-    /// leave it intact, matching the original dispatcher.
+    /// Overlay messages are appended after the verb handler response, matching
+    /// the original shared output buffer. State-only rules leave base intact.
     /// Reproduce the prelude of the original effect dispatcher at 0x11be9.
     /// It resets per-command globals, derives the two hotspot-exclusion flags,
     /// and returns false exactly when the original returns before calling any
@@ -1296,8 +1300,13 @@ pub const Game = struct {
         if (result.picture) |picture| self.picture_override = picture;
         if (result.messages.items.len == 0) return base;
 
+        // The original verb handler and the room effect dispatcher both write
+        // into the same output buffer; overlay text is appended, not a
+        // replacement for the parser response.
         var out = std.ArrayList(u8).empty;
         const w = out.writer(self.allocator);
+        try w.writeAll(base);
+        if (base.len != 0) try w.writeByte('\n');
         for (result.messages.items, 0..) |text, i| {
             if (i != 0) try w.writeByte('\n');
             try w.writeAll(text);

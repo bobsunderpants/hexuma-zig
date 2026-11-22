@@ -578,17 +578,45 @@ def is_true_expr(node: Any) -> bool:
     return node == true_expr()
 
 
+def expr_unresolved(node: Any) -> bool:
+    """True for decompiler locals or raw memory expressions with no stable
+    original-global semantics. Those rules are gated off rather than guessed."""
+    if isinstance(node, dict):
+        if "raw" in node:
+            return True
+        value = node.get("v")
+        if isinstance(value, str) and (value.startswith("uVar") or value.startswith("local_")):
+            return True
+        return any(expr_unresolved(item) for item in node.values())
+    if isinstance(node, list):
+        return any(expr_unresolved(item) for item in node)
+    return False
+
+
 class RuleExtractor:
     ASSIGN_OPS = ("=", "+=", "-=", "*=", "/=", "|=", "&=", "^=", "<<=", ">>=")
 
     def __init__(self, unit: int):
         self.unit = unit
         self.rules: List[Dict[str, Any]] = []
+        self.group = 0
 
     def add(self, guard: Any, actions: List[Dict[str, Any]]) -> None:
         if not actions:
             return
-        self.rules.append({"unit": self.unit, "when": expr_json(guard, {}), "actions": actions})
+        when = expr_json(guard, {})
+        if expr_unresolved(when):
+            when = expr_json(("num", 0), {})
+        signature = json.dumps(when, sort_keys=True, separators=(",", ":"))
+        previous = json.dumps(self.rules[-1]["when"], sort_keys=True, separators=(",", ":")) if self.rules else None
+        if previous != signature:
+            self.group += 1
+        self.rules.append({
+            "group": self.group,
+            "unit": self.unit,
+            "when": when,
+            "actions": actions,
+        })
 
     def combine(self, guard: Any, cond: Any) -> Any:
         cond = resolve_expr(cond, {})

@@ -202,6 +202,10 @@ The extractor scans plausible length prefixes, converts to UTF-8, and writes
 - `BILDDAT.SEQ` → 271 picture-table values.
 - `VORS.BIN` → 418 `click_regions` from records 1..170, including slots whose
   original Pascal string is empty or a single space (see below).
+- `HEXUMA.OVR` compiled units → `data/overlay_rules.json`, 6,183 structured
+  room/action rules with numeric `room_ranges` derived from the main dispatch
+  at `0x11d46`. Guards and actions are AST nodes; the runtime parser is
+  `src/overlay_rules.zig` and the evaluator is `src/overlay_eval.zig`.
 
 This layer is locale-independent. German labels come from the shipped tables;
 English labels are authored in `src/locale_data.zig` and emitted as

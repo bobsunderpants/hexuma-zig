@@ -200,8 +200,24 @@ Detailed evidence: `docs/reports/hexuma.md`.
   resolves verb/noun ids, `0x184e4` applies hardcoded state fixups,
   `0x1b140` dispatches verb ids, and `0x11be9`/`0x16dbe` dispatch object/action
   effects. Room-specific behavior lives largely as compiled x86 code in
-  `HEXUMA.OVR`; the `cd 3f` records in `HEXPRG.EXE` look like overlay thunks or
-  descriptors, but their dispatch mechanism is still unresolved.
+  `HEXUMA.OVR`.
+- `cd 3f` is Turbo Pascal's overlay-manager dispatch, installed at vector
+  `0x3f` with `CS=0x3a97`. The handler at linear `0x3aa36` manipulates System
+  overlay variables at `DS:0x2bc9+0xafe..0xb24`. Every `cd 3f <u16>` in the
+  load module is a five-byte descriptor thunk; the following word is the
+  routine offset inside the overlay unit, not an overlay number. Main dispatch
+  at `0x11d46..0x11e26` maps room ranges to far segments
+  `0x328 + 3*i`, so descriptor block `i` corresponds to overlay unit `i`.
+- All 11 overlay units were extracted from `HEXUMA.OVR` and decompiled from
+  clean entry-point COM slices. `scripts/extract_overlay_rules.py` converts the
+  authoritative decompilations in `/tmp/opencode/ovr-entry-only/{i}-dec/` into
+  `extracted/data/overlay_rules.json`: 6,183 rules with structured guards and
+  actions, numeric `room_ranges`, and zero raw guards. `src/overlay_rules.zig`
+  parses that table; `src/overlay_eval.zig` evaluates it in original rule order,
+  stopping at terminal `return` actions. The engine applies the dispatcher
+  prelude from `0x11be9` (hotspot exclusion flags `0xf2f9`/`0xf2fa`) before
+  selecting a unit. Overlay messages append to the verb-handler output in the
+  same shared output buffer; they do not replace it.
 - A deterministic DOSBox-X harness is available at `scripts/dosbox_parity.sh`.
   Fixed cycles, disabled vsync, surface output, and capture-until-stable
   produce byte-identical screenshots. DOSBox-X `AUTOTYPE` lines in `[autoexec]`

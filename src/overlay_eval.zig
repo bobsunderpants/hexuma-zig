@@ -38,8 +38,14 @@ pub fn run(allocator: std.mem.Allocator, db: rules.Database, context: Context, r
 
 fn runUnit(allocator: std.mem.Allocator, unit: rules.Unit, context: Context) !Result {
     var result = Result{};
+    var current_group: ?i64 = null;
+    var group_enabled = false;
     for (unit.rules) |rule| {
-        if (evalExpr(context, rule.when) == 0) continue;
+        if (current_group == null or current_group.? != rule.group) {
+            current_group = rule.group;
+            group_enabled = evalExpr(context, rule.when) != 0;
+        }
+        if (!group_enabled) continue;
         for (rule.actions) |action| {
             switch (action) {
                 .message => |id| {

@@ -103,6 +103,18 @@ grep -q $'^1\tSchau den Brontosaurus an\tSchau den Brontosaurus an$' <<<"$out"
 out="$("$BIN" vors --picture 123 --room 189 --flag 0x5422=1 --dword 0x4a62=189 --extracted "$EXTRACTED")"
 grep -q $'^4\t\tUntersuche das Holzstück$' <<<"$out"
 
+# REA-derived OVR rules: evaluate one original if-block guard once, then apply
+# all of its actions in order. Room 170/unit 0 covers all four message ids
+# called out in the room-0xaa decompilation.
+out="$("$BIN" rules --room 170 --verb 7 --object 0 --flag 0xf428=1 --flag 0xf427=0 --flag 0xf429=1 --flag 0xf42b=0 --extracted "$EXTRACTED")"
+grep -q 'msg 0x88ba' <<<"$out"
+out="$("$BIN" rules --room 170 --verb 3 --object 575 --flag 0xf429=1 --extracted "$EXTRACTED")"
+grep -q 'msg 0x7761' <<<"$out"
+out="$("$BIN" rules --room 170 --verb 3 --object 0 --flag 0xf428=1 --flag 0xf427=1 --flag 0xf429=1 --extracted "$EXTRACTED")"
+grep -q 'msg 0x77ab' <<<"$out"
+out="$("$BIN" rules --room 170 --verb 1 --object 592 --flag 0xf42b=1 --extracted "$EXTRACTED")"
+grep -q 'msg 0x88c3' <<<"$out"
+
 # Portable save/load state.
 save="$(mktemp)"
 original_dir="$(mktemp -d)"
