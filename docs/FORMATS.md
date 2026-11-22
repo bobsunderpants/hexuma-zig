@@ -116,10 +116,52 @@ the rate as inferred.
 
 ## `.FON` fonts
 
-`8X8PROP*.FON` are 16128 bytes = `256 × 63`. Each record is emitted as a hex
-string in JSON. The records contain eight 8-byte bitplanes plus width/metric
-bytes, but the exact proportional-metric layout was not fully resolved, so bytes
-are preserved losslessly rather than guessed into glyph images.
+`8X8PROP*.FON` are 16128 bytes with a fixed layout:
+
+```text
+0000  256 bytes   header: one advance-width byte per code point (0..255)
+0100  256 × 62    glyph records, one per code point
+```
+
+Each 62-byte glyph record is:
+
+```text
+0000  u8      advance width (same value as header[code])
+0001  u8      left bearing / reserved (usually 0)
+0002  u8      glyph height (typically 5 or 6)
+0003  u8      top bearing / reserved (usually 0)
+0004  u8[56]  pixels, row-major, 8 rows × 7 columns
+0060  u8      trailing metric (varies; not used for rendering)
+0061  u8      trailing metric (varies; not used for rendering)
+```
+
+The font driver `FUN_3443_06db(7,6,0,0)` returns 62, confirming the 62-byte
+record size. A pixel is opaque when its byte is nonzero. The shipped variants
+use different palette indices for opaque pixels:
+
+- `8X8PROP.FON` uses `0xf7`, `0xf8`, `0xf9`.
+- `8X8PROP1.FON` uses the same indices plus background `0x07`.
+- `8X8PROP2.FON` uses `0xff`.
+
+For example, `A` (code `0x41`) has advance 6 and this 8×7 mask (nonzero pixels
+shown as `#`):
+
+```text
+..#....
+..#....
+.#.#...
+.###...
+#...#..
+#...#..
+..#....
+.......
+```
+
+This resolves the earlier 63-byte guess: `256 + 256 × 62 = 16128`. Raw font
+bytes are still preserved in `data/fonts.json`, but glyph masks and advances can
+now be reconstructed from the record layout without guessing. DOSBox framebuffer
+text uses these masks at 1:1 pixel scale, which makes it possible to decode
+captured screen text directly instead of relying on OCR.
 
 ## `.REL` resources
 

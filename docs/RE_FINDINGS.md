@@ -264,13 +264,55 @@ Detailed evidence: `docs/reports/hexuma.md`.
   native overlay loader reproduction.
 - A deterministic DOSBox-X harness is available at `scripts/dosbox_parity.sh`.
   Fixed cycles, disabled vsync, surface output, and capture-until-stable
-  produce byte-identical screenshots. DOSBox-X `AUTOTYPE` lines in `[autoexec]`
-  run before `hexuma.bat`; lines after it are blocked until the game exits, so
-  in-game command injection needs an external XTest helper. The current Zig GUI
-  has a structurally different layout, so semantic/state parity is the
-  realistic near-term target rather than pixel identity.
+  produce byte-identical screenshots. DOSBox-X `AUTOTYPE` can skip the intro,
+  but queued AUTOTYPE text is not reliably delivered to Hexuma's BIOS keyboard
+  reader. Reliable injection uses real XTest events from
+  `scripts/xtest_input.py`: after the game reaches its command prompt, the
+  harness activates the PID-owned viewable DOSBox window and sends keys or
+  clicks through XTest. `XTEST_SCRIPT` (`WAIT:TOKENS`) and the convenience
+  `XTEST_COMMANDS` both work. The original keyboard path is the BIOS `INT 16h`
+  poll/read pair at `0x3a0ea`/`0x3a0fc`, which stores the scan code in
+  `0xf87f`; XTest produces the same hardware-level events, while AUTOTYPE's
+  queued events do not. The Zig GUI has a structurally different layout, so
+  semantic/state parity is the realistic near-term target rather than pixel
+  identity.
 - Full research reports: `docs/reports/interpreter.md` and
   `docs/reports/dosbox-parity.md`.
+
+## Original keyboard input path
+
+The main loop at `0x25206` (`FUN_1c89_8976`) polls a pending key with
+`FUN_39df_02fa` (`0x3a0ea`) and consumes it with `FUN_39df_030c` (`0x3a0fc`).
+Both operate through the one-byte scan-code mailbox at `0xf87f`:
+
+- `0x3a0ea` calls BIOS `INT 16h AH=01` only when the mailbox is empty, then
+  returns whether a key is pending.
+- `0x3a0fc` drains the mailbox, or calls BIOS `INT 16h AH=00` to block for a key;
+  a nonzero ASCII result is stored back into `0xf87f`.
+- `0x25206` maps mouse hotspots and command-key hotkeys into the same local
+  character value used by the line editor at `0xc9c2`; `\r` submits the line.
+- `0x39e20` and `0x3a181` clear `0xf87f` during peripheral setup.
+
+This explains why XTest keystrokes reach the parser while DOSBox-X AUTOTYPE
+does not: XTest injects real X11 key events that SDL forwards into the emulated
+keyboard controller, whereas queued AUTOTYPE commands were observed to change
+the intro/command-prompt screen but not the BIOS keyboard state consumed here.
+
+## Font and screen text
+
+`8X8PROP.FON` and `8X8PROP2.FON` are exactly
+`256 + 256*62 = 16128` bytes: a 256-byte header followed by 256 records of
+62 bytes. Each record is `advance, reserved, height, reserved`, eight rows of
+seven raw palette-index pixels, and two trailing metric bytes. A pixel is
+opaque when its byte is nonzero (`f7/f8/f9` in `8X8PROP.FON`, `ff` in
+`8X8PROP2.FON`).
+
+The original on-screen text uses shaded olive palette entries, not direct
+`.FON` palette indices: captured text glyphs are composed of colors such as
+`(174,174,125)`, `(158,162,109)`, `(146,146,93)`, and `(117,117,69)` on black.
+Thresholding those colors into a binary mask makes the `.FON` glyph bitmaps
+match the framebuffer glyph-for-glyph with proportional advances, so the FON
+files are usable for screen-text comparison despite the different VGA colors.
 
 ## Encoding
 
@@ -316,15 +358,17 @@ state. Detailed evidence: `docs/reports/save-format.md`.
 - Original save byte parity is not claimed because the `0x18d8` VRAM thumbnail
   and the `0x404` graphics-driver block are opaque to the Zig state model.
 - Overlay rules are verified against static decompilation and targeted CLI
-  probes; full DOSBox action-by-action parity remains an open validation task.
-  `scripts/dosbox_parity.sh` now captures original frames reliably under KDE
-  Wayland by forcing `SDL_VIDEODRIVER=x11`; without it SDL2 creates a native
+  probes. `scripts/dosbox_parity.sh` now captures original frames reliably under
+  KDE Wayland by forcing `SDL_VIDEODRIVER=x11`; without it SDL2 creates a native
   Wayland window whose Xwayland shadow is `IsUnMapped`/`_NET_WM_STATE_HIDDEN`.
-  The harness selects the viewable window owned by its own DOSBox PID, queues
-  all AUTOTYPE input before the blocking `hexuma.bat`, and waits for queued
-  input before testing frame stability.
-- Font glyph metrics are unresolved, and several flag mutators
-  (`0x5e31`, `0x5fab`, `0x6029`, `0x604b`, `0x4b9a`, `0x4a62`, `0xb894`,
-  `0x6bc4`) are still tracked as live state without a decoded writer.
+  The harness selects the viewable window owned by its own DOSBox PID and now
+  injects real XTest keys/clicks after the game reaches its command prompt, so
+  action-by-action DOSBox parity can be exercised. Full action-by-action
+  verification is still pending, not blocked by input capture.
+- Several flag mutators (`0x5e31`, `0x5fab`, `0x6029`, `0x604b`, `0x4b9a`,
+  `0x4a62`, `0xb894`, `0x6bc4`) are still tracked as live state without a
+  decoded writer. Font record layout and advances are resolved; the remaining
+  rendering gap is matching the original shaded palette and text placement in
+  the Zig GUI, not glyph metrics.
 - `OBLISTE.BIN`'s trailing byte and parts of `VORS.BIN` padding are inert
   authoring remnants, not decoded game data.

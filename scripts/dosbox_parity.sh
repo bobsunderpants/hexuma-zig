@@ -10,12 +10,24 @@
 # Usage:
 #   scripts/dosbox_parity.sh OUT_DIR "PRE_AUTOTYPE" "zig commands" "POST_AUTOTYPE"
 #
-# Both AUTOTYPE arguments use DOSBox-X syntax; separate multiple invocations
-# with '|'. PRE_AUTOTYPE is queued first, POST_AUTOTYPE second; both are placed
+# AUTOTYPE arguments use DOSBox-X syntax; separate multiple invocations with
+# '|'. PRE_AUTOTYPE is queued first, POST_AUTOTYPE second; both are placed
 # before hexuma.bat because [autoexec] lines after a blocking game never run.
-# The -w values are cumulative waits from launch, e.g.
-#   "-w 3 enter" "" "-w 4 -p 0.1 untersuche space kamin enter"
-# CAPTURE_WAIT can override the automatic post-injection wait in seconds.
+#
+# For reliable command injection use XTEST_SCRIPT instead of AUTOTYPE.  The
+# script is semicolon-separated WAIT:TOKENS, where WAIT is the delay since the
+# previous action (first delay is from launch) and TOKENS are comma-separated
+# key names.  Spaces inside TOKENS are converted to `space`.  Example:
+#
+#   XTEST_SCRIPT='3:enter;2:untersuche kamin enter' scripts/dosbox_parity.sh ...
+#
+# XTEST_COMMANDS is a convenience wrapper: semicolon-separated commands are
+# sent after the two startup Enters, each followed by Enter.  XTEST_COMMAND_WAIT
+# sets the delay before each command.  XTEST_DELAY (milliseconds per key) and
+# XTEST_POST_WAIT (seconds after the final action) tune timing.  XTEST is
+# preferred because DOSBox-X AUTOTYPE can skip the intro but does not reliably
+# deliver typed commands to Hexuma's BIOS keyboard reader; real XTest events
+# do.  CAPTURE_WAIT overrides the legacy AUTOTYPE post-injection wait.
 set -euo pipefail
 
 OUT_DIR="${1:?output directory required}"
@@ -33,6 +45,8 @@ DISPLAY_NUM="${DISPLAY:-:1}"
 command -v dosbox-x >/dev/null || { echo 'dosbox-x is required' >&2; exit 1; }
 command -v import >/dev/null || { echo 'ImageMagick import is required' >&2; exit 1; }
 command -v compare >/dev/null || { echo 'ImageMagick compare is required' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'python3 is required for XTEST input' >&2; exit 1; }
+[ -f "$ROOT/scripts/xtest_input.py" ] || { echo 'scripts/xtest_input.py is missing' >&2; exit 1; }
 
 mkdir -p "$OUT_DIR" "$SCRATCH"
 if [ ! -f "$SCRATCH/HEXPRG.EXE" ]; then
@@ -40,8 +54,22 @@ if [ ! -f "$SCRATCH/HEXPRG.EXE" ]; then
 fi
 rm -f "$LOG" "$OUT_DIR"/*.png "$OUT_DIR"/*.txt
 
+xtest_script="${XTEST_SCRIPT:-}"
+xtest_delay="${XTEST_DELAY:-60}"
+xtest_post_wait="${XTEST_POST_WAIT:-2}"
+if [ -z "$xtest_script" ] && [ -n "${XTEST_COMMANDS:-}" ]; then
+  # Startup needs an early Enter to skip the intro and a second Enter to reach
+  # the command prompt; give DOSBox-X time to finish its video-mode switches.
+  xtest_script="10:enter;1:enter"
+  IFS=';' read -ra xtest_commands <<< "$XTEST_COMMANDS"
+  for command in "${xtest_commands[@]}"; do
+    [ -z "$command" ] && continue
+    xtest_script+=";${XTEST_COMMAND_WAIT:-2}:$command enter"
+  done
+fi
+
 autotype_lines=""
-if [ -n "$PRE_AUTOTYPE_ARGS" ]; then
+if [ -n "$PRE_AUTOTYPE_ARGS" ] && [ -z "$xtest_script" ]; then
   IFS='|' read -ra parts <<< "$PRE_AUTOTYPE_ARGS"
   for part in "${parts[@]}"; do
     [ -n "$part" ] && autotype_lines+="autotype ${part}"$'\n'
@@ -49,7 +77,7 @@ if [ -n "$PRE_AUTOTYPE_ARGS" ]; then
 fi
 
 post_autotype_lines=""
-if [ -n "$POST_AUTOTYPE_ARGS" ]; then
+if [ -n "$POST_AUTOTYPE_ARGS" ] && [ -z "$xtest_script" ]; then
   IFS='|' read -ra parts <<< "$POST_AUTOTYPE_ARGS"
   for part in "${parts[@]}"; do
     [ -n "$part" ] && post_autotype_lines+="autotype ${part}"$'\n'
@@ -143,6 +171,32 @@ find_window() {
   return 0
 }
 
+# Convert a human XTEST script token string into comma-separated X tokens.
+# Spaces become `space`; everything else is passed through so click tokens and
+# key names such as `enter` continue to work.
+xtest_tokens() {
+  printf '%s' "$1" | sed 's/ /,space,/g; s/,,/,/g; s/,$//'
+}
+
+run_xtest_script() {
+  local spec wait tokens win
+  IFS=';' read -ra specs <<< "$xtest_script"
+  for spec in "${specs[@]}"; do
+    [ -z "$spec" ] && continue
+    wait="${spec%%:*}"
+    tokens="${spec#*:}"
+    [ "$wait" = "$tokens" ] && { echo "bad XTEST_SCRIPT entry: $spec" >&2; return 1; }
+    sleep "$wait"
+    win="$(find_window "$emu_pid")"
+    if [ -z "$win" ]; then
+      echo 'warning: no viewable DOSBox window for XTEST input' >&2
+      return 1
+    fi
+    DISPLAY="$DISPLAY_NUM" python3 "$ROOT/scripts/xtest_input.py" \
+      "$win" "$(xtest_tokens "$tokens")" "$xtest_delay"
+  done
+}
+
 # Under KDE Wayland, SDL2 can choose its native Wayland backend even though the
 # config asks for X11. Native Wayland windows never appear in Xwayland's client
 # list, and their X11 shadow windows are unmapped/hidden. Force SDL's X11
@@ -161,7 +215,13 @@ for _ in $(seq 1 60); do
   sleep 0.25
 done
 
-if awk -v w="$capture_wait" 'BEGIN { exit !((w + 0) > 0) }'; then
+if [ -n "$xtest_script" ]; then
+  printf '%s\n' "$xtest_script" >"$OUT_DIR/input-script.txt"
+  echo "injecting XTEST script: $xtest_script"
+  run_xtest_script
+  echo "waiting ${xtest_post_wait}s after XTEST input"
+  sleep "$xtest_post_wait"
+elif awk -v w="$capture_wait" 'BEGIN { exit !((w + 0) > 0) }'; then
   echo "waiting ${capture_wait}s for queued AUTOTYPE input"
   sleep "$capture_wait"
 fi
