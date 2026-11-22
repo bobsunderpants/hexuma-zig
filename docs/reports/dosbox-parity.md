@@ -1,9 +1,9 @@
 # DOSBox parity harness research report — original DOS Hexuma
 
-Research-only investigation. No project files were modified. Scratch files live
-under `/tmp/opencode/`. The original game directory
-`/home/bob/Downloads/Hexuma/` was only read; all launches used the copy at
-`/tmp/opencode/hexuma-scratch/`.
+Research and harness documentation. The reusable harness lives in
+`scripts/dosbox_parity.sh`; scratch captures live under `/tmp/opencode/`. The
+original game directory `/home/bob/Downloads/Hexuma/` was only read; all
+launches used the copy at `/tmp/hexuma-parity-game/`.
 
 ## 1. Environment facts (verified)
 
@@ -348,3 +348,82 @@ e.g. `-w 3 enter`, it is a 144-color gameplay frame rather than the 20-color
 intro frame. This establishes a reliable original-frame capture path; mapping
 specific typed game commands to original actions remains a separate RE/input
 task.
+
+## 9. Reliable command injection through XTest
+
+### 9.1 Why AUTOTYPE was insufficient
+
+A controlled experiment isolated the problem:
+
+| Capture | Input | Result |
+|---|---|---|
+| `p-clean` | none | 320x200, 221 colors, mean `0.225581` |
+| `p-enter` | AUTOTYPE `-w 3 enter` | 320x200, 144 colors, mean `0.213365` |
+| `p-text` | AUTOTYPE `enter` then `u n t e r s u c h e space k a m i n enter` | pixel-identical to `p-enter` (`AE = 0`) |
+
+AUTOTYPE therefore changes the screen by skipping the intro and reaching the
+command prompt, but the queued letters never reach Hexuma's BIOS `INT 16h`
+keyboard reader. Delaying, repacing, digit hotkeys, escape, and space variants
+all produced the same frame. The original loop at `0x25206` consumes keys via
+`0x3a0ea` (`INT 16h AH=01`) and `0x3a0fc` (`INT 16h AH=00`) with a scan-code
+mailbox at `0xf87f`; queued AUTOTYPE events did not populate that path.
+
+### 9.2 XTest solution
+
+`scripts/xtest_input.py` is a ctypes wrapper over `libX11.so.6` and
+`libXtst.so.6` (no `-lXtst` symlink or `XTest.h` are needed). It:
+
+1. sends `_NET_ACTIVE_WINDOW`, calls `XSetInputFocus`, and raises the window;
+2. re-resolves the window for every action, because DOSBox-X recreates it on
+   video-mode changes;
+3. uses `XTestFakeKeyEvent` for real key press/release pairs and
+   `XTestFakeMotionEvent`/`XTestFakeButtonEvent` for clicks;
+4. maps `enter` to `Return`, `space`, German umlaut keysyms, and expands
+   unrecognised words into per-character key events; umlauts with no keycode on
+   the current X layout fall back to `ae/oe/ue/ss`.
+
+`scripts/dosbox_parity.sh` now accepts:
+
+```sh
+# Exact script: WAIT is the delay since the previous action.
+XTEST_SCRIPT='10:enter;1:enter;2:untersuche kamin enter' \
+  scripts/dosbox_parity.sh /tmp/opencode/parity-cmd "" "untersuche kamin" ""
+
+# Convenience: enters two startup keys, then each command plus Enter.
+XTEST_COMMANDS='untersuche kamin;gehe rauf' \
+  scripts/dosbox_parity.sh /tmp/opencode/parity-multi \
+  "" "untersuche kamin;gehe rauf" ""
+```
+
+Timing matters: the first Enter should be around 10 s after launch so DOSBox-X
+has completed startup and the intro; the second Enter reaches the command
+prompt. `XTEST_DELAY` (default `60` ms) and `XTEST_POST_WAIT` (default `2` s)
+tune key pacing and the final capture delay. The input script is saved to
+`OUT_DIR/input-script.txt` for reproducibility.
+
+Verified results:
+
+| Script | Capture |
+|---|---|
+| no injection | 320x200, 221 colors, mean `0.225581` |
+| one XTest Enter | 320x200, 144 colors, mean `0.213365` |
+| two Enters + typed `untersuche kamin` | 320x200, 116 colors, mean `0.232974` |
+| two Enters + typed `untersuche kamin enter` | 320x200, 116 colors, mean `0.232394` |
+| two commands (`untersuche kamin`, `gehe rauf`) | 320x200, 124 colors, mean `0.214590` |
+
+The typed command and submitted response produce distinct stable frames, so
+semantic parity can now be driven action by action against the same command
+list used for `zig play --choices`.
+
+### 9.3 Reading original text from the framebuffer
+
+The `.FON` layout is `256-byte header + 256 x 62-byte records`; each record has
+`advance, reserved, height, reserved`, eight 7-pixel rows, and two trailing
+metric bytes. On screen the glyphs are drawn with shaded olive colors rather
+than the raw `.FON` palette indices. Thresholding pixels with
+`r > 80 && abs(r-g) < 14 && 18 <= r-b <= 75` yields a binary glyph mask that
+matches the FON bitmaps with proportional advances. `scripts/parity_ocr.py`
+uses those masks to score known engine output lines against each captured text
+row; it is candidate-driven matching, not general OCR, but it is sufficient to
+confirm that a response such as `Mitten auf dem Boden liegt ein Zettel.*`
+appears in the original frame.
