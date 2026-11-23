@@ -1,8 +1,8 @@
-# Hexuma full playthrough - canonical German script
-# Source: /tmp/opencode/Hexuma-walkthrough.txt (Dominik), normalized to extracted vocab.
-# Notes: use `sage` not `sag`, avoid bare numeric choices where ambiguous.
+# Hexuma canonical German playthrough (normalized to extracted vocab/engine).
+# Source: /tmp/opencode/Hexuma-walkthrough.txt
+# Feelie-dependent choices are annotated where unresolved.
 
-# Kapitel 1: Das Hawthorne-Haus
+# Kapitel 1: Hawthorne-Haus
 warte
 warte
 warte
@@ -15,122 +15,42 @@ nein
 nimm edelsteinsplitter
 gehe osten
 nimm samuraischwert
-untersuche lüster
-norden
-untersuche billardtisch
+nimm klinge
+warte
+gehe westen
+untersuche kreatur
+# back to house after monster
+gehe osten
+öffne türe
+gehe norden
+
+# Kapitel 1: Billardzimmer
 nimm billardstock
-spiele billardtisch
+spiele billard
 nein
+lege billardstock
 nimm billardstock
+untersuche billardstock
+lege billardstock
+nimm billardstock
+untersuche billardstock
 zerlege billardstock
-befestige klinge griff
-süden
-süden
-zerschneide hanfseil
+zerlege billardstock
+befestige klinge am griff
+gehe süden
+gehe westen
+zerschneide seil
 nimm kerze
-nimm hanfseil
-westen
+nimm seil
+öffne türe
+gehe westen
 nimm feuerzeug
-osten
-unten
+gehe osten
+gehe osten
+betrete kamin
+untersuche boden
 nimm ruß
 drücke mauerstein
-unten
-nimm weinflasche
-westen
-nimm haken
-osten
-oben
-schütte feuerzeug
-zünde feuerzeug
-zünde kerze
-oben
-westen
-nimm marmeladenglas
-nimm bohnerwachs
-schiebe küchentisch
-osten
-schiebe küchentisch
-befestige haken schaft
-klettere küchentisch
-klettere falltüre
-westen
-öffne küchenbuffet
-nimm würfelzucker
-osten
-unten
-öffne marmeladenglas
-lege würfelzucker in marmeladenglas
-lege marmeladenglas
-warte
-warte
-warte
-schließe marmeladenglas
-nimm stubenfliege
-norden
-springe auf himmelbett
-nimm plüschtuch
-süden
-osten
-lege stubenfliege spinnennetz
-nimm waschlappen
-westen
-westen
-süden
-nimm kinderbibel
-lies kinderbibel
-öffne kinderbibel
-nimm silbermünze
-norden
-osten
-unten
-norden
-öffne bohnerwachs
-schmiere waschlappen mit bohnerwachs
-süden
-oben
-osten
-drücke klosett
-drehe waschlappen
-zerstöre spinnennetz
-nimm zahnbürste
-westen
-unten
-norden
-poliere boden
-poliere boden
-schiebe couch
-nimm zettel
-lies zettel
-untersuche notenblatt
-norden
-untersuche kamin
-schiebe küchentisch
-untersuche klavier
-öffne deckel
-löse schildchen
-nimm silbermünze
-stecke silbermünze schlitz
-nimm schlüsselchen
-öffne tastenklappe
-spiele klavier
-untersuche klavier
-nimm marmorkugel
-süden
-süden
-norden
-werfe marmorkugel billardtisch
-zerlege samuraischwert
-befestige klinge schaft
-nimm spitzhacke
-grabe
-ziehe bodenplatte
-unten
-ziehe hebel
-oben
-oben
-drücke griff
-drücke griff
-unten
-drücke bodenplatte
-drücke quader
+gehe runter
+untersuche flaschen
+untersuche etiketten

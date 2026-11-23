@@ -106,6 +106,16 @@ ALIASES = {
     "Ü": "Udiaeresis",
 }
 
+# US X11 keycodes for DOSBox keyboardlayout=de on a US X layout.
+# Avoids keysym remapping; send physical scancode DOSBox-de expects.
+DE_DOSBOX_KEYCODES = {
+    "a":38,"b":56,"c":54,"d":40,"e":26,"f":41,"g":42,"h":43,"i":31,"j":44,"k":45,"l":46,
+    "m":58,"n":57,"o":32,"p":33,"q":24,"r":27,"s":39,"t":28,"u":30,"v":55,"w":25,"x":53,
+    "y":52,"z":29," ":65,"ö":47,"ä":48,"ü":34,"ß":20,".":60,",":59,"-":20,
+    "1":10,"2":11,"3":12,"4":13,"5":14,"6":15,"7":16,"8":17,"9":18,"0":19,
+    "enter":36,"return":36,"space":65,"esc":9,"escape":9,"backspace":22,"tab":23,
+}
+
 
 class ClientMessageEvent(ctypes.Structure):
     _fields_ = [
@@ -120,17 +130,106 @@ class ClientMessageEvent(ctypes.Structure):
     ]
 
 
+x11.XChangeKeyboardMapping.restype = Bool
+x11.XChangeKeyboardMapping.argtypes = [DisplayPtr, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_ulong), ctypes.c_int]
+x11.XGetKeyboardMapping.restype = ctypes.POINTER(ctypes.c_ulong)
+x11.XGetKeyboardMapping.argtypes = [DisplayPtr, ctypes.c_uint, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+x11.XDisplayKeycodes.restype = Bool
+x11.XDisplayKeycodes.argtypes = [DisplayPtr, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+x11.XSync.restype = Bool
+x11.XSync.argtypes = [DisplayPtr, Bool]
+
+
 class XTestClient:
-    def __init__(self, display_name: str | None = None):
+    def __init__(self, display_name: str | None = None, de_dosbox_mode: bool = False):
         self.display_name = display_name or os.environ.get("DISPLAY", ":1")
         self.display = x11.XOpenDisplay(self.display_name.encode())
         if not self.display:
             raise RuntimeError(f"cannot open X display {self.display_name}")
+        self._mapped_keycodes: list[int] = []
+        self._saved_mappings: dict[int, tuple[int, list[int]]] = {}
+        self.de_dosbox_mode = de_dosbox_mode
 
     def close(self) -> None:
         if self.display:
+            self._restore_mappings()
             x11.XCloseDisplay(self.display)
             self.display = None
+
+    def _restore_mappings(self) -> None:
+        for code, (per, keysyms) in list(self._saved_mappings.items()):
+            arr = (ctypes.c_ulong * len(keysyms))(*keysyms)
+            x11.XChangeKeyboardMapping(self.display, code, per, arr, 1)
+        if self._saved_mappings:
+            x11.XSync(self.display, False)
+        self._saved_mappings.clear()
+        self._mapped_keycodes.clear()
+
+    # German umlauts on US X layout: remap preferred de physical keycodes.
+    _DE_KEYCODES = {
+        'ä': 48, 'Ä': 48, 'ö': 47, 'Ö': 47, 'ü': 34, 'Ü': 34, 'ß': 20,
+    }
+    _UMLAUTS = set(_DE_KEYCODES.keys())
+
+    def _ensure_keysym(self, token: str) -> int:
+        sym = self.keysym_for(token)
+        if sym == 0:
+            raise ValueError(f"unknown key token: {token!r}")
+        code = x11.XKeysymToKeycode(self.display, sym)
+        if code != 0 and token not in self._UMLAUTS:
+            return code
+        preferred = self._DE_KEYCODES.get(token)
+        min_k = ctypes.c_int(); max_k = ctypes.c_int()
+        x11.XDisplayKeycodes(self.display, ctypes.byref(min_k), ctypes.byref(max_k))
+        per = ctypes.c_int()
+        candidates = [preferred] if preferred else []
+        for kc in range(max_k.value, min_k.value - 1, -1):
+            if kc not in candidates:
+                candidates.append(kc)
+        for kc in candidates:
+            if kc is None or kc < min_k.value or kc > max_k.value:
+                continue
+            if kc in self._saved_mappings:
+                per0, syms0 = self._saved_mappings[kc]
+                if int(sym) == syms0[0] if syms0 else False:
+                    return kc
+                # re-remap
+            ptr = x11.XGetKeyboardMapping(self.display, kc, 1, ctypes.byref(per))
+            if not ptr:
+                continue
+            try:
+                keysyms = [int(ptr[i]) for i in range(per.value)]
+            finally:
+                x11.XFree(ctypes.cast(ptr, ctypes.c_void_p))
+            if kc in self._saved_mappings:
+                # update existing remap
+                perv, old = self._saved_mappings[kc]
+                new_syms = old[:] if old else [0]
+                new_syms[0] = int(sym)
+                arr = (ctypes.c_ulong * len(new_syms))(*new_syms)
+                x11.XChangeKeyboardMapping(self.display, kc, len(new_syms), arr, 1)
+                x11.XSync(self.display, False)
+                return kc
+            if kc != preferred and any(k != 0 for k in keysyms):
+                continue
+            self._saved_mappings[kc] = (per.value, keysyms[:])
+            new_syms = keysyms[:] if keysyms else [0]
+            new_syms[0] = int(sym)
+            if len(new_syms) > 1 and token.isupper():
+                new_syms[1] = int(sym)
+            arr = (ctypes.c_ulong * len(new_syms))(*new_syms)
+            x11.XChangeKeyboardMapping(self.display, kc, len(new_syms), arr, 1)
+            x11.XSync(self.display, False)
+            mapped = x11.XKeysymToKeycode(self.display, sym)
+            if mapped == kc:
+                self._mapped_keycodes.append(kc)
+                return kc
+            if mapped != 0:
+                self._mapped_keycodes.append(kc)
+                return mapped
+        if code != 0:
+            return code
+        raise ValueError(f"no X keycode for keysym 0x{sym:x} ({token})")
 
     def __enter__(self) -> "XTestClient":
         return self
@@ -193,13 +292,11 @@ class XTestClient:
         return sym
 
     def keycode(self, token: str) -> int:
-        sym = self.keysym_for(token)
-        if sym == 0:
-            raise ValueError(f"unknown key token: {token!r}")
-        code = x11.XKeysymToKeycode(self.display, sym)
-        if code == 0:
-            raise ValueError(f"no X keycode for keysym 0x{sym:x} ({token})")
-        return code
+        if self.de_dosbox_mode:
+            code = DE_DOSBOX_KEYCODES.get(token.lower() if len(token)==1 else token.lower())
+            if code is not None:
+                return code
+        return self._ensure_keysym(token)
 
     def press_key(self, token: str, delay: float) -> None:
         code = self.keycode(token)

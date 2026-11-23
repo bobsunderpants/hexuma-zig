@@ -53,7 +53,26 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-dosbox", action="store_true", help="engine trace only")
     p.add_argument("--no-engine", action="store_true", help="DOSBox captures only")
     p.add_argument("--no-ocr", action="store_true", help="skip step-scoped candidate OCR")
+    p.add_argument("--auto-taste", action="store_true", help="auto-advance detected -TASTE- prompts (best-effort; can desync)")
     return p.parse_args(args=None)
+
+
+def command_tokens(command: str) -> list[str]:
+    """Convert a command string to XTest tokens, preserving spaces as 'space'.
+
+    DOSBox/Hexuma input must include literal spaces between words. Using the
+    token name 'space' avoids comma/shell splitting issues in xtest_input.py.
+    """
+    tokens: list[str] = []
+    for ch in command:
+        if ch == " ":
+            tokens.append("space")
+        elif ch == "	":
+            tokens.append("space")
+        else:
+            tokens.append(ch)
+    tokens.append("enter")
+    return tokens
 
 
 def load_sequence(args: argparse.Namespace) -> dict:
@@ -62,11 +81,26 @@ def load_sequence(args: argparse.Namespace) -> dict:
     elif args.commands_file:
         commands = []
         for i, line in enumerate(Path(args.commands_file).read_text(encoding="utf-8").splitlines(), 1):
+            raw = line.rstrip("\n")
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            if line.lower() in ("@taste", "@taste-enter", "@key space"):
+                commands.append({"id": f"{i:04d}", "command": line, "tokens": ["space"]})
+                continue
+            if line.lower().startswith("@key "):
+                toks = [t for t in line.split()[1:] if t]
+                commands.append({"id": f"{i:04d}", "command": line, "tokens": toks})
+                continue
+            if line.lower().startswith("@wait "):
+                try:
+                    ms = int(line.split()[1])
+                except Exception:
+                    ms = 0
+                commands.append({"id": f"{i:04d}", "command": line, "tokens": [], "wait_ms": ms})
+                continue
             commands.append({"id": f"{i:04d}", "command": line,
-                             "tokens": line.split() + ["enter"]})
+                             "tokens": command_tokens(line)})
         seq = {"name": "plain commands", "commands": commands}
     else:
         raise SystemExit("either --sequence or --commands-file is required")
@@ -74,8 +108,13 @@ def load_sequence(args: argparse.Namespace) -> dict:
     seq.setdefault("commands", [])
     for i, item in enumerate(seq["commands"], 1):
         item.setdefault("id", f"{i:04d}")
-        item.setdefault("command", " ".join(item.get("tokens", [])[:-1]))
-        item.setdefault("tokens", item["command"].split() + ["enter"])
+        if "command" not in item:
+            toks = item.get("tokens", [])
+            if toks and toks[-1] == "enter":
+                toks = toks[:-1]
+            item["command"] = " ".join(toks)
+        if "tokens" not in item:
+            item["tokens"] = command_tokens(item["command"])
     return seq
 
 
@@ -134,6 +173,34 @@ def capture(env: dict, wid: int, path: Path) -> tuple[bytes, str] | None:
     return raw, hashlib.sha256(raw).hexdigest()
 
 
+TASTE_CANDIDATES = ["- TASTE -", "-TASTE-", "- TASTE-", "-TASTE -"]
+
+
+def detect_taste(frame: Path) -> dict:
+    """Best-effort detection of the original game's "- TASTE -" prompt.
+
+    Uses parity_ocr glyph matching; returns match metadata. Conservative
+    threshold avoids auto-advancing on normal text (which would desync input).
+    """
+    try:
+        from parity_ocr import load_font, load_screen, best_match
+        font = Path(os.environ.get("HEXUMA_FONT", "/home/bob/Downloads/Hexuma/8X8PROP.FON"))
+        glyphs = load_font(font)
+        screen = load_screen(frame)
+        best = {"confidence": 0.0, "y": 0, "x": 0, "line": ""}
+        for line in TASTE_CANDIDATES:
+            m = best_match(line, glyphs, screen)
+            conf = float(m.get("confidence", 0.0))
+            y = int(m.get("y", 0))
+            # - TASTE - prompt appears at the bottom of the text area.
+            if y >= 178 and conf > float(best["confidence"]):
+                best = {"confidence": conf, "y": y, "x": int(m.get("x", 0)), "line": line}
+        best["detected"] = best["confidence"] >= 0.455
+        return best
+    except Exception as exc:
+        return {"confidence": 0.0, "y": 0, "x": 0, "line": "", "detected": False, "error": str(exc)}
+
+
 def stable_capture(env: dict, wid: int, path: Path, pre_hash: str | None,
                    interval_ms: int, timeout_ms: int) -> dict:
     deadline = time.monotonic() + timeout_ms / 1000
@@ -187,6 +254,7 @@ startbanner=false
 fastbioslogo=true
 quit warning=false
 working directory option=noprompt
+keyboardlayout=de
 
 [render]
 scaler=none
@@ -270,7 +338,7 @@ def run_dosbox(args: argparse.Namespace, seq: dict, out: Path) -> dict:
         env=env, stdout=open(out / "dosbox-stdout.txt", "wb"),
         stderr=subprocess.STDOUT,
     )
-    client = XTestClient(args.display)
+    client = XTestClient(args.display, de_dosbox_mode=True)
     records = []
     previous_hash: str | None = None
     failure = None
@@ -299,15 +367,42 @@ def run_dosbox(args: argparse.Namespace, seq: dict, out: Path) -> dict:
             wid = wait_window(env, proc.pid)
             if proc.poll() is not None:
                 raise RuntimeError(f"DOSBox exited early before step {item['id']} (rc={proc.returncode})")
-            try:
-                client.send_tokens(wid, item["tokens"], args.key_delay_ms)
-            except Exception as exc:
-                frame = steps_dir / f"{item['id']}-input-failed.png"
-                capture(env, wid, frame)
-                raise RuntimeError(
-                    f"input failed at step {idx}/{len(seq['commands'])} {item['id']} "
-                    f"command={item.get('command','')!r}: {exc}; frame={frame}"
-                ) from exc
+
+            # Advance through "- TASTE -" prompts before sending command input.
+            # The original game blocks for a keypress; sending command text then
+            # would lose/garble input.
+            taste_presses = 0
+            taste_debug = []
+            if args.auto_taste:
+                for _ in range(12):
+                    probe = steps_dir / f"{item['id']}-probe.png"
+                    probe_meta = stable_capture(env, wid, probe, previous_hash,
+                                                args.settle_interval_ms, args.settle_timeout_ms)
+                    det = detect_taste(probe)
+                    taste_debug.append({"phase": "probe", "frame": probe.name, **det})
+                    if not det.get("detected"):
+                        break
+                    taste_presses += 1
+                    try:
+                        client.send_tokens(wid, ["space"], args.key_delay_ms)
+                    except Exception as exc:
+                        raise RuntimeError(f"taste-advance failed at step {item['id']}: {exc}") from exc
+                    post = steps_dir / f"{item['id']}-taste-{taste_presses}.png"
+                    post_meta = stable_capture(env, wid, post, probe_meta["sha256"],
+                                               args.settle_interval_ms, args.settle_timeout_ms)
+                    previous_hash = post_meta["sha256"]
+                    taste_debug.append({"phase": "post", "frame": post.name, "sha256": post_meta["sha256"]})
+
+            if item.get("tokens"):
+                try:
+                    client.send_tokens(wid, item["tokens"], args.key_delay_ms)
+                except Exception as exc:
+                    frame = steps_dir / f"{item['id']}-input-failed.png"
+                    capture(env, wid, frame)
+                    raise RuntimeError(
+                        f"input failed at step {idx}/{len(seq['commands'])} {item['id']} "
+                        f"command={item.get('command','')!r}: {exc}; frame={frame}"
+                    ) from exc
             frame = steps_dir / f"{item['id']}.png"
             meta = stable_capture(env, wid, frame, previous_hash,
                                   args.settle_interval_ms, args.settle_timeout_ms)
@@ -315,6 +410,8 @@ def run_dosbox(args: argparse.Namespace, seq: dict, out: Path) -> dict:
             records.append({"id": item["id"], "kind": "command",
                             "command": item.get("command", ""),
                             "frame": f"steps/{item['id']}.png",
+                            "taste_presses": taste_presses,
+                            "taste_debug": taste_debug,
                             "window": hex(wid), **meta})
     except Exception as exc:
         failure = str(exc)
@@ -348,7 +445,10 @@ def run_ocr(args: argparse.Namespace, seq: dict, out: Path, report: dict) -> Non
     trace_file = out / "engine-trace.ndjson"
     step_by_id = {item["id"]: i for i, item in enumerate(seq["commands"], 1)}
     for record in report["dosbox"]["steps"]:
-        frame = out / record["frame"]
+        frame_rel = record.get("frame")
+        if not frame_rel:
+            continue
+        frame = out / frame_rel
         if not frame.is_file():
             continue
         step = step_by_id.get(record["id"])
