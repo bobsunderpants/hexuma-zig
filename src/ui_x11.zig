@@ -98,15 +98,21 @@ const WindowUi = struct {
         const canvas_h: usize = @intCast(view_h);
         var py: usize = 0;
         while (py < raw.h) : (py += 1) {
-            const dy = raw.y * scale + py * scale;
-            if (dy >= canvas_h) break;
-            var px: usize = 0;
-            while (px < raw.w) : (px += 1) {
-                const dx = raw.x * scale + px * scale;
-                if (dx >= canvas_w) break;
-                const src = (py * raw.w + px) * 4;
-                const dst = (dy * canvas_w + dx) * 4;
-                @memcpy(canvas[dst .. dst + 4], raw.pixels[src .. src + 4]);
+            var sy: usize = 0;
+            while (sy < scale) : (sy += 1) {
+                const dy = raw.y * scale + py * scale + sy;
+                if (dy >= canvas_h) break;
+                var px: usize = 0;
+                while (px < raw.w) : (px += 1) {
+                    const src = (py * raw.w + px) * 4;
+                    var sx: usize = 0;
+                    while (sx < scale) : (sx += 1) {
+                        const dx = raw.x * scale + px * scale + sx;
+                        if (dx >= canvas_w) break;
+                        const dst = (dy * canvas_w + dx) * 4;
+                        @memcpy(canvas[dst .. dst + 4], raw.pixels[src .. src + 4]);
+                    }
+                }
             }
         }
     }
@@ -121,9 +127,17 @@ const WindowUi = struct {
         self.ximage = null;
 
         const canvas = self.allocator.alloc(u8, @as(usize, @intCast(view_w)) * @as(usize, @intCast(view_h)) * 4) catch return;
-        @memset(canvas, 0);
-        const bg_name = std.fmt.allocPrint(self.allocator, "BILD{d:0>3}", .{pic}) catch return;
-        if (self.loadRawImage(bg_name)) |bg| blitRaw(canvas, bg);
+        @memset(canvas, 0x20);
+        const n: u32 = @intCast(@max(0, pic));
+        var bg_buf: [7]u8 = "BILD000".*;
+        bg_buf[4] = @intCast('0' + (n / 100) % 10);
+        bg_buf[5] = @intCast('0' + (n / 10) % 10);
+        bg_buf[6] = @intCast('0' + n % 10);
+        if (self.loadRawImage(&bg_buf)) |bg| {
+            blitRaw(canvas, bg);
+        } else {
+            std.log.warn("gui: missing background {s} in {s}", .{ bg_buf[0..], self.extracted_dir });
+        }
 
         // The BILD loader at 0x2bffd draws every FR overlay whose scene/flag
         // condition holds, in table order, over the background.

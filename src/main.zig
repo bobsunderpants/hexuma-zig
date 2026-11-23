@@ -1095,6 +1095,7 @@ fn traceState(allocator: std.mem.Allocator, game: *const engine.Game, step: usiz
     traceSortedMap(out, allocator, "flags", game.flags) catch return;
     traceSortedMap(out, allocator, "words", game.words) catch return;
     traceSortedMap(out, allocator, "dwords", game.dword_flags) catch return;
+    traceSortedMap(out, allocator, "locals", game.overlay_locals) catch return;
     out.writeByte('\n') catch return;
 }
 
@@ -1171,6 +1172,7 @@ fn writeTraceJson(file: std.fs.File, allocator: std.mem.Allocator, step: usize, 
     try writeJsonMap(out, allocator, "flags", game.flags);
     try writeJsonMap(out, allocator, "words", game.words);
     try writeJsonMap(out, allocator, "dwords", game.dword_flags);
+    try writeJsonMap(out, allocator, "locals", game.overlay_locals);
     try out.writeAll("}}\n");
     try file.writeAll(record.items);
 }
@@ -1312,6 +1314,8 @@ fn applyFlagSpec(game: *engine.Game, spec: []const u8, is_dword: bool) !void {
     const value = std.fmt.parseInt(i64, spec[eq + 1 ..], 0) catch return error.InvalidFlagSpec;
     if (is_dword) {
         try game.dword_flags.put(address, @bitCast(@as(i32, @intCast(value))));
+    } else if (game.overlay_db != null and game.overlay_db.?.isLocal(address)) {
+        try game.overlay_locals.put(address, value);
     } else if (engine.Game.isWordGlobal(address)) {
         try game.words.put(address, @truncate(@as(u16, @intCast(@mod(value, 65536)))));
     } else {

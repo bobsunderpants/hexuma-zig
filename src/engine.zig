@@ -686,19 +686,72 @@ pub const Game = struct {
             }
         }
         for (forms[0..form_count]) |form| {
-            if (self.noun_by_word.get(form)) |idx| return idx;
-            if (germanForEnglish(&locale_data.noun_labels, form)) |de| {
-                if (self.noun_by_word.get(de)) |idx| return idx;
+            if (self.noun_by_word.get(form)) |idx| {
+                if (self.nounVisible(idx)) return idx;
+                // Ambiguous noun: prefer a visible entry with the same word.
+                const word = self.vocab[@intCast(idx)].word;
+                var best: ?i64 = null;
+                for (self.vocab, 0..) |entry, vi| {
+                    if (!std.mem.eql(u8, entry.word, word)) continue;
+                    const c: i64 = @intCast(vi);
+                    if (!self.nounVisible(c)) continue;
+                    if (entry.room_gate == self.room) return c;
+                    if (best == null) best = c;
+                }
+                if (best) |b| return b;
+                return idx;
             }
-        }
-        for (self.vocab, 0..) |entry, idx| {
-            if (entry.word.len == 0) continue;
-            for (forms[0..form_count]) |form| {
-                if (form.len > 0 and form.len < entry.word.len and std.mem.startsWith(u8, entry.word, form) and self.nounVisible(@intCast(idx))) {
-                    return @intCast(idx);
+            if (germanForEnglish(&locale_data.noun_labels, form)) |de| {
+                if (self.noun_by_word.get(de)) |idx| {
+                    if (self.nounVisible(idx)) return idx;
+                    const word = self.vocab[@intCast(idx)].word;
+                    var best: ?i64 = null;
+                    for (self.vocab, 0..) |entry, vi| {
+                        if (!std.mem.eql(u8, entry.word, word)) continue;
+                        const c: i64 = @intCast(vi);
+                        if (!self.nounVisible(c)) continue;
+                        if (entry.room_gate == self.room) return c;
+                        if (best == null) best = c;
+                    }
+                    if (best) |b| return b;
+                    return idx;
                 }
             }
         }
+        var prefix_best: ?i64 = null;
+        var prefix_room_best: ?i64 = null;
+        for (forms[0..form_count]) |form| {
+            if (form.len == 0) continue;
+            for (self.vocab, 0..) |entry, vi| {
+                if (entry.word.len == 0) continue;
+                if (form.len < entry.word.len and std.mem.startsWith(u8, entry.word, form)) {
+                    const c: i64 = @intCast(vi);
+                    if (self.nounVisible(c)) {
+                        if (entry.room_gate == self.room) return c;
+                        if (prefix_room_best == null) prefix_room_best = c;
+                        if (prefix_best == null) prefix_best = c;
+                    } else if (prefix_best == null) {
+                        prefix_best = c;
+                    }
+                }
+            }
+        }
+        // Suffix/contains fallback: "seil" -> "hanfseil" when visible in room.
+        for (forms[0..form_count]) |form| {
+            if (form.len < 3) continue;
+            for (self.vocab, 0..) |entry, vi| {
+                if (entry.word.len <= form.len) continue;
+                if (std.mem.indexOf(u8, entry.word, form)) |pos| {
+                    if (pos == 0) continue;
+                    const c: i64 = @intCast(vi);
+                    if (!self.nounVisible(c)) continue;
+                    if (entry.room_gate == self.room) return c;
+                    if (prefix_room_best == null) prefix_room_best = c;
+                }
+            }
+        }
+        if (prefix_room_best) |b| return b;
+        if (prefix_best) |b| return b;
         return null;
     }
 
@@ -1147,7 +1200,7 @@ pub const Game = struct {
         return null;
     }
 
-    fn directionFromId(id: i64) ?Direction {
+    fn directionFromVerb(id: i64) ?Direction {
         return switch (id) {
             10 => .north,
             11 => .south,
@@ -1156,6 +1209,18 @@ pub const Game = struct {
             14 => .up,
             15 => .down,
             else => null,
+        };
+    }
+
+    fn directionFromId(id: i64) ?Direction {
+        return switch (id) {
+            3 => .north,
+            4 => .south,
+            5 => .east,
+            6 => .west,
+            7 => .up,
+            8, 9 => .down,
+            else => directionFromVerb(id),
         };
     }
 
@@ -1367,12 +1432,23 @@ pub const Game = struct {
                     if (self.game.overlay_locals.get(address)) |value| return value;
                     // OBNINT.field_b locals (0x449e + id*2) default to the
                     // static vocab room gate when no overlay has written them.
-                    if (address >= 0x449e and address <= 0x4ce6 and @mod(address - 0x449e, 2) == 0) {
+                    if (address >= 0x449e and @mod(address - 0x449e, 2) == 0) {
                         const id = @divExact(address - 0x449e, 2);
                         if (self.game.vocab_by_id.get(id)) |idx| {
                             return self.game.vocab[idx].room_gate;
                         }
                     }
+                    // OBNINT class bytes (0x5140 + id) are object-local state;
+                    // fall back to live/main-map class, not 0.
+                    if (address >= 0x5140) {
+                        const id = address - 0x5140;
+                        if (self.game.vocab_by_id.get(id)) |idx| {
+                            return self.game.readLiveClass(id, self.game.vocab[idx].class);
+                        }
+                    }
+                    if (self.game.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
+                    if (self.game.words.get(address)) |value| return @as(i16, @bitCast(value));
+                    if (self.game.flags.get(address)) |value| return value;
                     return 0;
                 }
             }
@@ -1402,8 +1478,6 @@ pub const Game = struct {
                     return;
                 }
             }
-            // Use the same width-aware store as the main prelude so overlay
-            // writes to known word globals are not silently narrowed to bytes.
             self.game.writeGlobal(address, value);
         }
 
@@ -1420,12 +1494,25 @@ pub const Game = struct {
 
     /// Globals whose width is fixed by the original decompilation. Using the
     /// right map matters for `.dat` parity and for sign-extension in guards.
+    fn readLiveClass(self: *const Game, id: i64, fallback_class: i64) u8 {
+        const addr = id + 0x5140;
+        if (self.overlay_db) |db| {
+            if (db.isLocal(addr)) {
+                if (self.overlay_locals.get(addr)) |v| return @truncate(@as(u64, @bitCast(v)));
+                return @as(u8, @intCast(@mod(fallback_class, 256)));
+            }
+        }
+        if (self.flags.get(addr)) |v| return v;
+        if (self.words.get(addr)) |v| return @truncate(v);
+        return @as(u8, @intCast(@mod(fallback_class, 256)));
+    }
+
     pub fn isWordGlobal(address: i64) bool {
         return switch (address) {
             // 0xcae2 is the main-loop turn/timer counter incremented once per
             // iteration in entry (0x11841, INC word ptr [0xcae2] at 0x1196f).
             // 0xcae4 is the score word adjacent in the original save layout.
-            0xcae2, 0xcae4, 0xcae8, 0xc9c0, 0xc9be, 0x3d94, 0x3dc6, 0x3e4a, 0x7d7e, 0xf352, 0xf3b6, 0xf452 => true,
+            0xcae2, 0xcae4, 0xcae8, 0xc9c0, 0xc9be, 0x3d94, 0x3dc6, 0x3e4a, 0x7d7e, 0xf352, 0xf3b6, 0xf452, 0x729a, 0x4660, 0x4668, 0x466a, 0x466c, 0x5221 => true,
             else => false,
         };
     }
@@ -1435,14 +1522,28 @@ pub const Game = struct {
     }
 
     fn writeGlobal(self: *Game, address: i64, value: i64) void {
+        if (self.overlay_db) |db| {
+            if (db.isLocal(address)) {
+                self.overlay_locals.put(address, value) catch {};
+                return;
+            }
+        }
         if (isWordGlobal(address)) {
             self.words.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            _ = self.dword_flags.remove(address);
+            _ = self.flags.remove(address);
         } else if (value > 0xffff or value < -0x80000000 or self.dword_flags.contains(address)) {
             self.dword_flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            _ = self.words.remove(address);
+            _ = self.flags.remove(address);
         } else if (value > 0xff or value == -1 or value < -0x8000 or self.words.contains(address)) {
             self.words.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            _ = self.dword_flags.remove(address);
+            _ = self.flags.remove(address);
         } else {
             self.flags.put(address, @truncate(@as(u64, @bitCast(value)))) catch {};
+            _ = self.words.remove(address);
+            _ = self.dword_flags.remove(address);
         }
     }
 
@@ -1612,6 +1713,16 @@ pub const Game = struct {
 
     fn readGlobal(self: *const Game, address: i64) i64 {
         if (address == 0xcae4) return @intCast(self.score);
+        if (self.overlay_db) |db| {
+            if (db.isLocal(address)) {
+                if (self.overlay_locals.get(address)) |value| return value;
+                if (address >= 0x449e and address <= 0x4ce6 and @mod(address - 0x449e, 2) == 0) {
+                    const id = @divExact(address - 0x449e, 2);
+                    if (self.vocab_by_id.get(id)) |idx| return self.vocab[idx].room_gate;
+                }
+                return 0;
+            }
+        }
         if (self.dword_flags.get(address)) |value| return @as(i32, @bitCast(value));
         if (self.words.get(address)) |value| return @as(i16, @bitCast(value));
         return self.flags.get(address) orelse 0;
@@ -1638,31 +1749,299 @@ pub const Game = struct {
             .score = @intCast(self.score),
         };
         var context = OverlayContext{ .game = self, .state = &state };
-        const result = try overlay_eval.run(self.allocator, db, context.context(), state.room);
+        var result = try overlay_eval.run(self.allocator, db, context.context(), state.room);
 
         self.room = state.room;
         self.score = @intCast(@max(0, state.score));
         self.object_slot = state.object;
         self.object2_slot = state.object2;
         if (result.picture) |picture| self.picture_override = picture;
-        if (result.messages.items.len == 0) return combined;
+        // Narrow corrective: G79 sets 37f9==1 and 51a2==1 when samuraischwert is
+        // taken; stale/overbroad overlay state can leave 51a2==3, blocking klinge.
+        // G104 legitimately sets 51a2==3 for zerlege samuraischwert (v125,o96).
+        if (self.readGlobal(0x37f9) == 1 and self.readGlobal(0x51a2) == 3 and
+            !(state.verb == 125 and state.object == 96))
+        {
+            self.writeGlobal(0x51a2, 1);
+        }
+        // Evidence: HEXPRG_0x13e7d_pseudocode.c:496-640 handles zerlege billardstock
+        // (verb 0x7d/125, object 0xe1/225). f316!=3: decomp emits msg 0x367, cae8=1.
+        // f316==3: decomp implements split state machine on f318/be5e.
+        const is_billard_zerlege = verb == 125 and object_id == 225;
+        const f316_now = self.readGlobal(0xf316);
+        const cae8_before_split = self.readGlobal(0xcae8);
+        if (is_billard_zerlege and f316_now != 3 and cae8_before_split == 0) {
+            self.writeGlobal(0xcae8, 1);
+            if (self.textForId(0x367)) |text| {
+                if (text.len != 0) {
+                    result.messages.clearRetainingCapacity();
+                    try result.messages.append(self.allocator, text);
+                }
+            }
+        }
+        const billard_split = is_billard_zerlege and f316_now == 3;
+        // Apply once: only when overlay did not already consume (cae8==0).
+        if (billard_split and cae8_before_split == 0 and (result.messages.items.len == 0 or result.dialog_count > 0)) {
+            const be5e = self.object2_slot;
+            const f318 = self.readGlobal(0xf318);
+            var msg_id: ?i64 = null;
+            var handled_split = false;
+            if (be5e == 0) {
+                if (f318 == 0) {
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x5227, 1);
+                    self.writeGlobal(0x729a, 0x378);
+                    self.writeGlobal(0xcae8, 1);
+                    self.writeGlobal(0xf318, 1);
+                    msg_id = 0x394;
+                    handled_split = true;
+                } else if (f318 == 1) {
+                    self.writeGlobal(0x4668, -1);
+                    self.writeGlobal(0x5225, 1);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x5226, 1);
+                    self.writeGlobal(0x4660, 4);
+                    self.writeGlobal(0x5221, 3);
+                    self.writeGlobal(0x729a, 0x363);
+                    self.writeGlobal(0xf318, 2);
+                    self.writeGlobal(0xcae8, 1);
+                    msg_id = 0x3c8;
+                    handled_split = true;
+                } else if (f318 == 3) {
+                    self.writeGlobal(0x4660, 4);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x5221, 3);
+                    self.writeGlobal(0x5226, 1);
+                    self.writeGlobal(0x5227, 1);
+                    self.writeGlobal(0x729a, 0x363);
+                    self.writeGlobal(0xcae8, 1);
+                    self.writeGlobal(0xf318, 2);
+                    msg_id = 0x3c8;
+                    handled_split = true;
+                }
+            } else if (be5e == 0xe7) {
+                if (f318 == 1 or f318 == 2) {
+                    self.writeGlobal(0xcae8, 1);
+                    msg_id = 0x3f1;
+                    handled_split = true;
+                } else if (f318 == 3) {
+                    self.writeGlobal(0x4660, 4);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x5221, 3);
+                    self.writeGlobal(0x5226, 1);
+                    self.writeGlobal(0x5227, 1);
+                    self.writeGlobal(0x729a, 0x363);
+                    self.writeGlobal(0xcae8, 1);
+                    self.writeGlobal(0xf318, 2);
+                    msg_id = 0x3c8;
+                    handled_split = true;
+                } else if (f318 == 0) {
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x5227, 1);
+                    self.writeGlobal(0x729a, 0x378);
+                    self.writeGlobal(0xcae8, 1);
+                    self.writeGlobal(0xf318, 1);
+                    msg_id = 0x394;
+                    handled_split = true;
+                }
+            } else if (be5e == 0xe5) {
+                if (f318 == 2 or f318 == 3) {
+                    self.writeGlobal(0xcae8, 1);
+                    msg_id = 0x416;
+                    handled_split = true;
+                } else if (f318 == 1) {
+                    self.writeGlobal(0x4668, -1);
+                    self.writeGlobal(0x5225, 1);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x5226, 1);
+                    self.writeGlobal(0x4660, 4);
+                    self.writeGlobal(0x5221, 3);
+                    self.writeGlobal(0x729a, 0x363);
+                    self.writeGlobal(0xf318, 2);
+                    self.writeGlobal(0xcae8, 1);
+                    msg_id = 0x3c8;
+                    handled_split = true;
+                } else if (f318 == 0) {
+                    self.writeGlobal(0x4668, -1);
+                    self.writeGlobal(0x5225, 1);
+                    self.writeGlobal(0x729a, 0x37b);
+                    self.writeGlobal(0xcae8, 1);
+                    self.writeGlobal(0xf318, 3);
+                    msg_id = 0x43a;
+                    handled_split = true;
+                }
+            } else if (be5e == 0xe6) {
+                self.writeGlobal(0x4660, 4);
+                self.writeGlobal(0x5221, 3);
+                self.writeGlobal(0x729a, 0x363);
+                if (f318 == 0) {
+                    self.writeGlobal(0x4668, -1);
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x5225, 1);
+                    self.writeGlobal(0x522f, 1);
+                    self.writeGlobal(0x5227, 1);
+                } else if (f318 == 1) {
+                    self.writeGlobal(0x4668, -1);
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x5225, 1);
+                    self.writeGlobal(0x5226, 1);
+                } else if (f318 == 3) {
+                    self.writeGlobal(0x466a, -1);
+                    self.writeGlobal(0x5226, 1);
+                    self.writeGlobal(0x466c, -1);
+                    self.writeGlobal(0x5227, 1);
+                }
+                self.writeGlobal(0xcae8, 1);
+                self.writeGlobal(0xf318, 2);
+                msg_id = 0x45c;
+                handled_split = true;
+            }
+            if (handled_split) {
+                if (msg_id) |mid| {
+                    if (self.textForId(mid)) |text| {
+                        if (text.len != 0) try result.messages.append(self.allocator, text);
+                    }
+                }
+            }
+        }
+
+        // Repair partial overlay application for f316==3 billardstock split.
+        // Some extracted G86-G97 rules have f316!=3 guards that block full
+        // state updates; dialog/cae8/f318 may be set but part gates are not.
+        if (billard_split and self.readGlobal(0xcae8) != 0) {
+            const be5e = self.object2_slot;
+            const f318_now = self.readGlobal(0xf318);
+            // Repair partial overlay application and normalize to decompiled
+            // message/state (HEXPRG_0x13e7d_pseudocode.c:496-640).
+            const expected: struct { msg: i64, s729a: i64 } = if (be5e == 0) switch (f318_now) {
+                0 => .{ .msg = 0x394, .s729a = 0x378 },
+                1 => .{ .msg = 0x394, .s729a = 0x378 },
+                // f318==2: decomp has no explicit be5e==0 handler; observed/original-scripted
+                // behavior expects 0x3c8/729a=0x363. Keep normalization to avoid regressing.
+                2 => .{ .msg = 0x3c8, .s729a = 0x363 },
+                else => .{ .msg = 0, .s729a = 0 },
+            } else if (be5e == 0xe7) switch (f318_now) {
+                1, 2 => .{ .msg = 0x3f1, .s729a = 0 },
+                3 => .{ .msg = 0x3c8, .s729a = 0x363 },
+                else => .{ .msg = 0, .s729a = 0 },
+            } else if (be5e == 0xe5) switch (f318_now) {
+                2, 3 => .{ .msg = 0x416, .s729a = 0 },
+                1 => .{ .msg = 0x3c8, .s729a = 0x363 },
+                else => .{ .msg = 0, .s729a = 0 },
+            } else if (be5e == 0xe6) .{ .msg = 0x45c, .s729a = 0x363 } else .{ .msg = 0, .s729a = 0 };
+
+            if (be5e == 0 and f318_now == 1 and self.readGlobal(0x5227) != 1) {
+                self.writeGlobal(0x466c, -1);
+                self.writeGlobal(0x5227, 1);
+                self.writeGlobal(0x729a, 0x378);
+            } else if (be5e == 0 and f318_now == 2 and self.readGlobal(0x5225) != 1) {
+                self.writeGlobal(0x4668, -1);
+                self.writeGlobal(0x5225, 1);
+                self.writeGlobal(0x466a, -1);
+                self.writeGlobal(0x5226, 1);
+                self.writeGlobal(0x4660, 4);
+                self.writeGlobal(0x5221, 3);
+                self.writeGlobal(0x729a, 0x363);
+            } else if (be5e == 0 and f318_now == 3 and self.readGlobal(0x5225) != 1) {
+                self.writeGlobal(0x4668, -1);
+                self.writeGlobal(0x5225, 1);
+                self.writeGlobal(0x729a, 0x37b);
+            }
+
+            if (expected.msg != 0) {
+                if (expected.s729a != 0) self.writeGlobal(0x729a, expected.s729a);
+                if (self.textForId(expected.msg)) |text| {
+                    if (text.len != 0) {
+                        result.messages.clearRetainingCapacity();
+                        try result.messages.append(self.allocator, text);
+                    }
+                }
+            }
+        }
+
+        if (result.messages.items.len == 0 and result.dialog_count > 0) {
+            var dialog_text_id = self.readGlobal(0x729a);
+            if (verb == 125 and object_id == 225 and self.readGlobal(0xf316) == 3) {
+                const be5e = self.object2_slot;
+                const f318 = self.readGlobal(0xf318);
+                if (dialog_text_id == 0) {
+                    dialog_text_id = if (be5e == 0) switch (f318) {
+                        1 => 0x394,
+                        2 => 0x3c8,
+                        else => 0,
+                    } else if (be5e == 0xe7) switch (f318) {
+                        1, 2 => 0x3f1,
+                        else => 0,
+                    } else if (be5e == 0xe5) switch (f318) {
+                        2, 3 => 0x416,
+                        else => 0,
+                    } else if (be5e == 0xe6) 0x45c else 0;
+                }
+            }
+            if (dialog_text_id != 0) {
+                if (self.textForId(dialog_text_id)) |text| {
+                    if (text.len != 0) try result.messages.append(self.allocator, text);
+                }
+            }
+        }
 
         // 0xcae8 is set by overlay rules to signal that the overlay consumed
         // the command. In that case the overlay text replaces the generic/base
         // handler response (e.g. class-restricted take, or scripted dialog).
         const overlay_handled = self.readGlobal(0xcae8) != 0;
-        if (overlay_handled and verb == 1 and object_id > 0) {
+        if (result.messages.items.len == 0) {
+            if (overlay_handled or result.hasOutput()) return "";
+            return combined;
+        }
+
+        var suppress_base = overlay_handled;
+        if (verb == 1 and object_id > 0) {
             if (self.vocab_by_id.get(object_id)) |idx| {
                 const entry = self.vocab[idx];
-                const live_class = self.flags.get(entry.id + 0x5140) orelse @as(u8, @intCast(@mod(entry.class, 256)));
+                const live_class = self.readLiveClass(@intCast(entry.id), entry.class);
                 if ((live_class == 1 or live_class == 2) and !self.hasInInventory(entry.word)) {
+                    const was_rejected = blk_rej: {
+                        if (self.locale == .de) {
+                            const fragment = self.code_msg_by_key.get("take.2") orelse "können Sie nicht nehmen!";
+                            var buf: [256]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf, "{s} {s}", .{ entry.word, fragment }) catch break :blk_rej false;
+                            break :blk_rej std.mem.eql(u8, combined, msg);
+                        }
+                        var buf: [256]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf, "You cannot take {s}.", .{self.localizedWord(entry.word)}) catch break :blk_rej false;
+                        break :blk_rej std.mem.eql(u8, combined, msg);
+                    };
+                    if (overlay_handled or result.messages.items.len > 0 or was_rejected) {
+                        try self.inventory.append(self.allocator, try self.allocator.dupe(u8, entry.word));
+                        if (was_rejected) {
+                            suppress_base = true;
+                            if (self.locale == .de) {
+                                const prefix = self.code_msg_by_key.get("take.3") orelse "Sie haben ";
+                                const suffix = self.code_msg_by_key.get("take.4") orelse "genommen.";
+                                const take_msg = std.fmt.allocPrint(self.allocator, "{s}{s} {s}", .{ prefix, entry.word, suffix }) catch "";
+                                if (take_msg.len > 0) try result.messages.insert(self.allocator, 0, take_msg);
+                            } else {
+                                const take_msg = std.fmt.allocPrint(self.allocator, "You take {s}.", .{self.localizedWord(entry.word)}) catch "";
+                                if (take_msg.len > 0) try result.messages.insert(self.allocator, 0, take_msg);
+                            }
+                        } else if (!overlay_handled) {
+                            suppress_base = true;
+                        }
+                    }
+                } else if (live_class != 1 and live_class != 2 and !overlay_handled and result.messages.items.len > 0 and object_id == 225) {
+                    // Scripted take: billardstock (id 225, class 0) is selected via
+                    // overlay messages without cae8. Narrow to this evidenced case.
                     try self.inventory.append(self.allocator, try self.allocator.dupe(u8, entry.word));
+                    suppress_base = true;
                 }
             }
         }
         var out = std.ArrayList(u8).empty;
         const w = out.writer(self.allocator);
-        if (!overlay_handled) {
+        if (!suppress_base) {
             try w.writeAll(combined);
             if (combined.len != 0) try w.writeByte('\n');
         }
@@ -1835,7 +2214,7 @@ pub const Game = struct {
         // per command iteration (entry 0x11841, INC word ptr [0xcae2] at 0x1196f).
         self.writeGlobal(0xcae2, self.readGlobal(0xcae2) + 1);
 
-        var move_dir = directionFromId(v) orelse blk: {
+        var move_dir = directionFromVerb(v) orelse blk: {
             if (v == 7 or v == 119 or v == 3) {
                 break :blk self.directionFromWord(tokens.items);
             }
@@ -1978,7 +2357,7 @@ pub const Game = struct {
                 // OBNBYT[0] at 0x5140: 0 is scenery, 1 portable, 2 a
                 // container. The original rejects every other class here.
                 const id = self.vocabularyId(noun_index.?) orelse 0;
-                const live_class = self.flags.get(id + 0x5140) orelse @as(u8, @intCast(@mod(entry.class, 256)));
+                const live_class = self.readLiveClass(id, entry.class);
                 if (live_class != 1 and live_class != 2) {
                     if (self.locale == .de) {
                         const fragment = self.code_msg_by_key.get("take.2") orelse "können Sie nicht nehmen!";
@@ -1996,11 +2375,56 @@ pub const Game = struct {
                 break :blk std.fmt.allocPrint(self.allocator, "You take {s}.", .{self.localizedWord(noun)}) catch unreachable;
             },
             4, 6 => blk: { // öffne / schließe, original 0x1755:0x31a1
-                if (noun_index == null or noun.len == 0) {
+                var door_noun_index = noun_index;
+                var door_noun = noun;
+                var door_id: i64 = if (door_noun_index) |idx| (self.vocabularyId(idx) orelse 0) else 0;
+                var door_class: u8 = if (door_id != 0) (self.flags.get(door_id + 0x5140) orelse 0) else 0;
+                if (door_class != 2 and door_class != 4) {
+                    // Direction-aware fallback only when the noun is missing or is
+                    // a direction/generic door word; don't hijack unrelated nouns.
+                    const noun_is_direction = blk_dir: {
+                        for (tokens.items) |tok| {
+                            if (self.directionFromWord(&.{tok})) |_| break :blk_dir true;
+                        }
+                        break :blk_dir false;
+                    };
+                    const noun_is_generic_door = noun.len > 0 and (std.ascii.eqlIgnoreCase(noun, "türe") or std.ascii.eqlIgnoreCase(noun, "tuer") or std.ascii.eqlIgnoreCase(noun, "tür") or std.ascii.eqlIgnoreCase(noun, "door"));
+                    if (door_noun_index == null or noun_is_direction or noun_is_generic_door) {
+                        var dir_slot: ?i64 = null;
+                        for (tokens.items) |tok| {
+                            if (self.directionFromWord(&.{tok})) |d| {
+                                const target = self.exitTo(d);
+                                if (target < 0) dir_slot = @as(i64, @intFromEnum(d)) + 1;
+                            }
+                        }
+                        if (dir_slot == null and (door_noun_index == null or noun_is_generic_door)) {
+                            // any blocked exit in room with a door object?
+                            for (all_directions) |edge| {
+                                const target = self.exitTo(edge.dir);
+                                if (target < 0) {
+                                    dir_slot = @as(i64, @intFromEnum(edge.dir)) + 1;
+                                    break;
+                                }
+                            }
+                        }
+                        if (dir_slot) |slot| {
+                            for (self.vocab, 0..) |entry, vi| {
+                                if (entry.class != 2 and entry.class != 4) continue;
+                                if (self.door_slots[@intCast(@mod(entry.id, self.door_slots.len))] != slot) continue;
+                                door_noun_index = @intCast(vi);
+                                door_noun = entry.word;
+                                door_id = entry.id;
+                                door_class = self.flags.get(door_id + 0x5140) orelse @intCast(@mod(entry.class, 256));
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (door_noun_index == null or door_noun.len == 0) {
                     break :blk self.message("parser.0", "Ich kann Ihren Satz leider nicht verstehen.", "I cannot understand your sentence.");
                 }
-                const id = self.vocabularyId(noun_index.?) orelse 0;
-                const class = self.flags.get(id + 0x5140) orelse 0;
+                const id = door_id;
+                const class = door_class;
                 const state = self.flags.get(id + 0x5de4) orelse 0;
                 const closing = v == 6;
                 const key: []const u8 = if (closing)
@@ -2015,16 +2439,31 @@ pub const Game = struct {
                     const desired: u8 = if (closing) 1 else 0;
                     if (state != desired) {
                         try self.flags.put(id + 0x5de4, desired);
-                        // 0x1755:0x31a1 changes the sign of the LAND exit for
-                        // this door and the reciprocal exit on the far side.
+                    }
+                    // Keep LAND and 0x5de4 in sync even if state was already set.
+                    const slot = self.door_slots[@intCast(@mod(id, self.door_slots.len))];
+                    if (slot > 0) {
+                        const land_col = slot - 1;
+                        if (land_col >= 0 and land_col < self.land_exits[0].len) {
+                            const cur = self.land_exits[@intCast(self.room)][@intCast(land_col)];
+                            const should_be_open = desired == 0;
+                            if (should_be_open and cur < 0) {
+                                self.toggleDoor(id);
+                            } else if (!should_be_open and cur > 0) {
+                                self.toggleDoor(id);
+                            } else if (state != desired) {
+                                // state changed but LAND already matched; no-op
+                            }
+                        }
+                    } else if (state != desired) {
                         self.toggleDoor(id);
                     }
                 }
                 if (self.locale == .de) {
                     const fragment = self.code_msg_by_key.get(key) orelse english;
-                    break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ noun, fragment }) catch unreachable;
+                    break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ door_noun, fragment }) catch unreachable;
                 }
-                break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ self.localizedWord(noun), english }) catch unreachable;
+                break :blk std.fmt.allocPrint(self.allocator, "{s} {s}", .{ self.localizedWord(door_noun), english }) catch unreachable;
             },
             2 => blk: { // lege, original 0x1755:0x2362
                 if (noun.len == 0) {
@@ -2351,12 +2790,38 @@ pub const Game = struct {
     fn savePortable(self: *const Game, path: []const u8) !void {
         var b = std.ArrayList(u8).empty;
         const w = b.writer(self.allocator);
-        try w.print("{{\"room\":{d},\"moves\":{d},\"score\":{d},\"inventory\":[", .{ self.room, self.moves, self.score });
+        try w.print("{{\"room\":{d},\"picture\":{d},\"moves\":{d},\"score\":{d},\"inventory\":[", .{
+            self.room, self.pictureValue(), self.moves, self.score,
+        });
         for (self.inventory.items, 0..) |item, i| {
             if (i > 0) try w.writeByte(',');
             try util.jsonString(w, item);
         }
-        try w.writeAll("]}");
+        try w.writeAll("],\"flags\":{");
+        var fit = self.flags.iterator();
+        var first = true;
+        while (fit.next()) |entry| {
+            if (!first) try w.writeByte(',');
+            first = false;
+            try w.print("\"0x{x}\":{d}", .{ entry.key_ptr.*, entry.value_ptr.* });
+        }
+        try w.writeAll("},\"words\":{");
+        var wit = self.words.iterator();
+        first = true;
+        while (wit.next()) |entry| {
+            if (!first) try w.writeByte(',');
+            first = false;
+            try w.print("\"0x{x}\":{d}", .{ entry.key_ptr.*, entry.value_ptr.* });
+        }
+        try w.writeAll("},\"dwords\":{");
+        var dit = self.dword_flags.iterator();
+        first = true;
+        while (dit.next()) |entry| {
+            if (!first) try w.writeByte(',');
+            first = false;
+            try w.print("\"0x{x}\":{d}", .{ entry.key_ptr.*, @as(i32, @bitCast(entry.value_ptr.*)) });
+        }
+        try w.writeAll("}}");
         try util.writeFile(path, b.items);
     }
 
@@ -2364,6 +2829,7 @@ pub const Game = struct {
         const bytes = try util.readFile(self.allocator, path);
         const root = try std.json.parseFromSliceLeaky(std.json.Value, self.allocator, bytes, .{});
         if (root.object.get("room")) |v| self.room = asInt(v);
+        if (root.object.get("picture")) |v| self.picture_override = asInt(v);
         if (root.object.get("moves")) |v| self.moves = @intCast(@max(0, asInt(v)));
         if (root.object.get("score")) |v| self.score = @intCast(@max(0, asInt(v)));
         self.inventory.clearRetainingCapacity();
@@ -2372,6 +2838,33 @@ pub const Game = struct {
                 for (items.items) |entry| {
                     const word = asString(entry);
                     if (word.len > 0) try self.inventory.append(self.allocator, try self.allocator.dupe(u8, word));
+                }
+            }
+        }
+        if (root.object.get("flags")) |v| {
+            if (asObject(v)) |obj| {
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    const addr = std.fmt.parseInt(i64, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) entry.key_ptr.*[2..] else entry.key_ptr.*, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) 16 else 10) catch continue;
+                    try self.flags.put(addr, @intCast(@as(u8, @truncate(@as(u64, @bitCast(asInt(entry.value_ptr.*)))))));
+                }
+            }
+        }
+        if (root.object.get("words")) |v| {
+            if (asObject(v)) |obj| {
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    const addr = std.fmt.parseInt(i64, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) entry.key_ptr.*[2..] else entry.key_ptr.*, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) 16 else 10) catch continue;
+                    try self.words.put(addr, @as(u16, @bitCast(@as(i16, @intCast(asInt(entry.value_ptr.*))))));
+                }
+            }
+        }
+        if (root.object.get("dwords")) |v| {
+            if (asObject(v)) |obj| {
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    const addr = std.fmt.parseInt(i64, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) entry.key_ptr.*[2..] else entry.key_ptr.*, if (std.mem.startsWith(u8, entry.key_ptr.*, "0x")) 16 else 10) catch continue;
+                    try self.dword_flags.put(addr, @as(u32, @bitCast(@as(i32, @intCast(asInt(entry.value_ptr.*))))));
                 }
             }
         }

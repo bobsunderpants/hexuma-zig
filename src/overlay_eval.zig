@@ -127,7 +127,11 @@ fn evalExpr(context: Context, expr: *const rules.Expr) i64 {
         .variable => |name| context.read_var(context.ptr, name),
         .flag => |text| context.read_flag(context.ptr, parseAddress(text)),
         .raw => 0,
-        .unary => |unary| evalUnary(unary.op, evalExpr(context, unary.child)),
+        .unary => |unary| blk: {
+            const value = evalExpr(context, unary.child);
+            if (std.mem.eql(u8, unary.op, "*")) break :blk context.read_flag(context.ptr, value);
+            break :blk evalUnary(unary.op, value);
+        },
         .binary => |binary| evalBinary(context, binary.op, binary.left, binary.right),
         .call => 0,
     };
