@@ -554,6 +554,9 @@ const code_string_pools = [_]CodeStringPool{
     .{ .name = "openclose", .segment = 0x1755, .offset = 0x312e, .limit = 6 },
     .{ .name = "drop", .segment = 0x1755, .offset = 0x225a, .limit = 2 },
     .{ .name = "inventory", .segment = 0x1755, .offset = 0x2e61, .limit = 6 },
+    // Main dispatcher tail at 0x11be9: copies the far string at 0x119c:0 for
+    // rooms that belong to no overlay unit.
+    .{ .name = "dispatch", .segment = 0x119c, .offset = 0x0000, .limit = 1 },
 };
 
 fn decodeCodeStrings(allocator: std.mem.Allocator, exe: []const u8, pool: CodeStringPool) ![]const []const u8 {
@@ -751,7 +754,7 @@ fn writeVocabJson(allocator: std.mem.Allocator, w: anytype, lines: []const []con
             group,
             i16At(ints, i * 4),
             i16At(ints, i * 4 + 2),
-            if (i < byts.len) byts[i] else 0,
+            if (i * 3 < byts.len) byts[i * 3] else 0,
             u16At(words, i * 4),
             u16At(words, i * 4 + 2),
         });
@@ -774,7 +777,7 @@ fn writeVocabLua(allocator: std.mem.Allocator, w: anytype, lines: []const []cons
             group,
             i16At(ints, i * 4),
             i16At(ints, i * 4 + 2),
-            if (i < byts.len) byts[i] else 0,
+            if (i * 3 < byts.len) byts[i * 3] else 0,
             u16At(words, i * 4),
             u16At(words, i * 4 + 2),
         });
@@ -842,6 +845,14 @@ fn writeGameData(allocator: std.mem.Allocator, input: []const u8, output: []cons
     try writeVocabJson(allocator, jw, obw5_lines, obnint5, obnbyt5, obnwor5, "s5");
     try jw.writeAll("\n  ],\n  \"vocabulary_6\": [\n");
     try writeVocabJson(allocator, jw, obw6_lines, obnint6, obnbyt6, obnwor6, "s6");
+    try jw.writeAll("\n  ],\n  \"object_gates\": [\n");
+    var object_id: usize = 0;
+    var gate_first = true;
+    while (object_id * 4 + 3 < obnint.len) : (object_id += 1) {
+        if (!gate_first) try jw.writeAll(",");
+        gate_first = false;
+        try jw.print("{d}", .{i16At(obnint, object_id * 4 + 2)});
+    }
     try jw.writeAll("\n  ],\n  \"pictures\": [\n");
     for (bild_lines, 0..) |line, pic_i| {
         if (pic_i > 0) try jw.writeAll(",\n");

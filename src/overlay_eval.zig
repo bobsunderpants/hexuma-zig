@@ -144,6 +144,15 @@ fn evalUnary(op: []const u8, value: i64) i64 {
     return value;
 }
 
+fn exprReadsFlag(expr: *const rules.Expr) bool {
+    return switch (expr.*) {
+        .flag => true,
+        .unary => |unary| std.mem.eql(u8, unary.op, "*") or exprReadsFlag(unary.child),
+        .binary => |binary| exprReadsFlag(binary.left) or exprReadsFlag(binary.right),
+        else => false,
+    };
+}
+
 fn evalBinary(context: Context, op: []const u8, left_expr: *const rules.Expr, right_expr: *const rules.Expr) i64 {
     // Short-circuit boolean operators so flag guards never evaluate irrelevant
     // branches with synthetic local variables.
@@ -158,8 +167,24 @@ fn evalBinary(context: Context, op: []const u8, left_expr: *const rules.Expr, ri
 
     const left = evalExpr(context, left_expr);
     const right = evalExpr(context, right_expr);
-    if (std.mem.eql(u8, op, "==")) return @intFromBool(left == right);
-    if (std.mem.eql(u8, op, "!=")) return @intFromBool(left != right);
+    if (std.mem.eql(u8, op, "==") or std.mem.eql(u8, op, "!=")) {
+        // The original compares 16-bit words. Overlay locals may store 65535
+        // where a sign-extended global word read yields -1 (e.g. 0x455e after
+        // `befestige klinge an griff`). Normalize both sides to unsigned
+        // 16-bit when a flag read is involved and both values fit that range.
+        // Ordered comparisons keep full width: flag[0xf2ce] < 32768 is the
+        // global high-bit test and must not be masked.
+        var l = left;
+        var r = right;
+        if ((exprReadsFlag(left_expr) or exprReadsFlag(right_expr)) and
+            left >= -32768 and left <= 65535 and right >= -32768 and right <= 65535)
+        {
+            l = left & 0xffff;
+            r = right & 0xffff;
+        }
+        if (std.mem.eql(u8, op, "==")) return @intFromBool(l == r);
+        return @intFromBool(l != r);
+    }
     if (std.mem.eql(u8, op, "<")) return @intFromBool(left < right);
     if (std.mem.eql(u8, op, "<=")) return @intFromBool(left <= right);
     if (std.mem.eql(u8, op, ">")) return @intFromBool(left > right);
