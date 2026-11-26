@@ -153,12 +153,12 @@ def score_candidate(chars, x0: int, y0: int, screen) -> dict:
             "confidence": round(coverage * precision, 4)}
 
 
-def best_match(line: str, glyphs, screen) -> dict:
+def best_match(line: str, glyphs, screen, min_y: int = TEXT_TOP) -> dict:
     chars = renderable(line, glyphs)
     if not chars:
         return {"line": line, "confidence": 0.0}
     best = {"line": line, "confidence": -1.0}
-    for y in range(TEXT_TOP, TEXT_BOTTOM):
+    for y in range(max(TEXT_TOP, min_y), TEXT_BOTTOM):
         for x in X_STARTS:
             result = score_candidate(chars, x, y, screen)
             if result["confidence"] > best["confidence"]:
@@ -174,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step")
     parser.add_argument("--json")
     parser.add_argument("--font", default=os.environ.get("HEXUMA_FONT", str(DEFAULT_FONT)))
+    parser.add_argument("--min-y", type=int, default=TEXT_TOP,
+                        help="lowest text row to score (filters stale scrollback)")
     args = parser.parse_args(argv)
 
     glyphs = load_font(Path(args.font))
@@ -185,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         parser.error("provide candidate files or --candidates-json")
 
-    ranked = sorted((best_match(line, glyphs, screen) for line in lines),
+    ranked = sorted((best_match(line, glyphs, screen, args.min_y) for line in lines),
                     key=lambda row: row["confidence"], reverse=True)
     result = {"screen": args.screen, "step": args.step,
               "candidates": len(lines), "matches": ranked}

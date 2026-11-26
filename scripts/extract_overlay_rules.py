@@ -555,6 +555,14 @@ def action_for_call(name: str, args: List[Any], syms: Dict[str, int]) -> Optiona
             v = const_value(args[1], syms)
             if v is not None:
                 return {"op": "msg", "id": v}
+    # FUN_1bc0_00a6 queues a TEXT*.REL message; when f2a7==1 it flushes the
+    # queue, otherwise it enqueues param_1. The door-open/postman path uses
+    # this to emit msg 266. Treat constant enqueues as msg actions.
+    if name == "func_0x0001bca6":
+        if len(args) >= 1:
+            v = const_value(args[0], syms)
+            if v is not None:
+                return {"op": "msg", "id": v}
     if name == "func_0x0001bffd":
         if len(args) >= 2:
             v = const_value(args[1], syms)

@@ -1,0 +1,51 @@
+# Native-verified German route to the lit candle (DOSBox-X, 2026-11-23).
+warte
+warte
+warte
+warte
+öffne die tür zum gesellschaftszimmer
+gehe nach westen
+nimm feuerzeug
+gehe nach osten
+öffne die haustür
+nimm umschlag
+nein
+nein
+schließe die haustür
+schließe den riegel
+schließe die tür zum gesellschaftszimmer
+gehe in kamin
+score
+schaue
+drücke mauerstein
+runter
+score
+nimm Flasche von 1896
+öffne Flasche
+fülle Feuerzeug mit Petroleum
+gehe nach rauf
+gehe nach süden
+öffne die tür zur bibliothek
+gehe nach osten
+nimm samuraischwert
+nimm klinge
+öffne die tür zum billardzimmer
+gehe nach norden
+score
+nimm stock
+lege stock
+nimm stock
+lege stock
+nimm stock
+zerlege stock
+zerlege stock
+verbinde griff mit klinge
+score
+gehe nach süden
+gehe nach westen
+zerschneide seil
+nimm seil
+nimm kerze
+entzünde feuerzeug
+entzünde kerze
+score

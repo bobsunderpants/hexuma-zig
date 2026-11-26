@@ -40,13 +40,13 @@ grep -q $'^4\tÖffne die Haustür\tSchließe die Haustüre$' <<<"$out"
 # 0x5e31=1 (front door closed); open/close toggles state and non-openable
 # objects use the exact code strings.
 out="$(printf 'schließe haustüre\nöffne haustüre\nöffne haustüre\nöffne kamin\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
-grep -q 'haustüre ist bereits zu.' <<<"$out"
-grep -q 'haustüre ist jetzt offen.' <<<"$out"
-grep -q 'haustüre ist bereits offen.' <<<"$out"
+grep -q 'Haustüre ist bereits zu.' <<<"$out"
+grep -q 'Haustüre ist jetzt offen.' <<<"$out"
+grep -q 'Haustüre ist bereits offen.' <<<"$out"
 grep -q 'kamin kann man nicht öffnen.' <<<"$out"
 # Front door starts closed (0x5e31=1). Opening it enables the south exit to room 18.
 out="$(printf 'öffne haustüre\ngehe süden\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
-grep -q 'haustüre ist jetzt offen.' <<<"$out"
+grep -q 'Haustüre ist jetzt offen.' <<<"$out"
 grep -q 'Du gehst süden.' <<<"$out"
 
 # Original OBNWOR/TEXT*.REL description is used for German lookups.
@@ -56,12 +56,15 @@ grep -q 'Ein Gemälde von dieser Größe' <<<"$out"
 # The no-object examine path reproduces the original room object scan and the
 # container state suffix from the same code-string pool.
 out="$(run 'untersuche')"
-grep -q 'Hier befinden sich eingangshalle, treppe' <<<"$out"
+# Raw OBNBYT classes: eingangshalle=6 (TEXT record), treppe=3 (scenery), so
+# neither is listed as a loose object by the original room-object routine.
+grep -q 'In der Eingangshalle' <<<"$out"
+grep -q 'Von der Decke hängt ein vielarmiger Kristallüster' <<<"$out"
 out="$(run 'untersuche haustüre')"
 grep -q 'ist zu.' <<<"$out"
 out="$(printf 'öffne haustüre\nschließe haustüre\nuntersuche haustüre\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
-grep -q 'haustüre ist jetzt offen.' <<<"$out"
-grep -q 'haustüre ist jetzt zu.' <<<"$out"
+grep -q 'Haustüre ist jetzt offen.' <<<"$out"
+grep -q 'Haustüre ist jetzt zu.' <<<"$out"
 grep -q 'Ein ist zu.' <<<"$out"
 
 # English alternative path uses the same verb ids and original VORS labels.
@@ -72,19 +75,20 @@ grep -q 'You go up' <<<"$out"
 out="$(run '1' --lang en --choices)"
 grep -q -E 'You (go|see)|That is not possible' <<<"$out"
 
-# Exact German message fragments recovered from HEXPRG.EXE.
+# Exact German message fragments recovered from HEXPRG.EXE. Room 1 has no
+# class-1 object (raw OBNBYT classes); postkarte is the always-available one.
 out="$(run 'nimm')"
 grep -q 'Bitte geben Sie genau an, was Sie nehmen wollen.' <<<"$out"
-out="$(printf 'nimm wand\nnimm wand\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
-grep -q 'wand haben Sie schon.' <<<"$out"
+out="$(printf 'nimm postkarte\nnimm postkarte\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
+grep -q 'postkarte haben Sie schon.' <<<"$out"
 out="$(run 'quatsch')"
 grep -q 'Ich kann Ihren Satz leider nicht verstehen.' <<<"$out"
 
 # Original drop/inventory/ignite message pools and class-checked take.
-out="$(printf 'nimm wand\ninventur\nlege wand\nlege wand\ninventur\nzünde kamin an\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
-grep -q 'Sie haben wand.' <<<"$out"
-grep -q 'wand liegt jetzt hier auf dem Boden.' <<<"$out"
-grep -q 'wand haben Sie ja gar nicht!' <<<"$out"
+out="$(printf 'nimm postkarte\ninventur\nlege postkarte\nlege postkarte\ninventur\nzünde kamin an\nquit\n' | "$BIN" play --extracted "$EXTRACTED")"
+grep -q 'Sie haben postkarte.' <<<"$out"
+grep -q 'postkarte liegt jetzt hier auf dem Boden.' <<<"$out"
+grep -q 'postkarte haben Sie ja gar nicht!' <<<"$out"
 grep -q 'Sie haben nichts.' <<<"$out"
 grep -q 'Das kann man nicht anzünden.' <<<"$out"
 out="$(run 'nimm kamin')"
@@ -162,14 +166,14 @@ grep -q 'msg early: trägt. Oben steht' <<<"$out"
 save="$(mktemp)"
 original_dir="$(mktemp -d)"
 trap 'rm -f "$save"; rm -rf "$original_dir"' EXIT
-printf 'nimm wand\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$save" >/dev/null
-grep -q '"inventory":\["wand"\]' "$save"
+printf 'nimm postkarte\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$save" >/dev/null
+grep -q '"inventory":\["postkarte"\]' "$save"
 printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$save" >/dev/null
 
 # Original .dat/.sav save state: 10839 decimal lines (7 numeric and one string
 # field per object, 8 per landscape, plus the scalar finalizer fields) and a
 # 0x18d8 + 0x404 byte .sav sibling.
-printf 'nimm wand\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$original_dir/00.dat" >/dev/null
+printf 'nimm postkarte\nquit\n' | "$BIN" play --extracted "$EXTRACTED" --save "$original_dir/00.dat" >/dev/null
 test "$(wc -l < "$original_dir/00.dat")" -eq 10839
 test "$(stat -c%s "$original_dir/00.sav")" -eq 7388
 printf 'quit\n' | "$BIN" play --extracted "$EXTRACTED" --load "$original_dir/00.dat" >/dev/null
@@ -211,14 +215,14 @@ import json, sys
 rows=[json.loads(l) for l in open(sys.argv[1])]
 cmd=[r for r in rows if r.get('kind')=='command']
 r1,r2=cmd[0],cmd[1]
-assert r1['response']==['lang und hat ein wenig mehr als einen Zentimeter'], r1['response']
+assert r1['response']==['Die Spitze ist jetzt vom Billardstock abgeschraubt.'], r1['response']
 s=r1['state']; f=s['flags']; w=s['words']; loc=s.get('locals',{})
 assert f.get('0xf318')==1
 assert (loc.get('0x5227')==1 or f.get('0x5227')==1)
 assert (loc.get('0x729a')==888 or w.get('0x729a')==888)
 assert w.get('0xcae8')==1
 assert (loc.get('0x466c') in (65535,-1) or w.get('0x466c') in (65535,-1))
-assert r2['response']==['Vielleicht sollten Sie Ihren Billardstock erstmal'], r2['response']
+assert r2['response']==['Der Billardstock ist jetzt ganz zerlegt.'], r2['response']
 s=r2['state']; f=s['flags']; w=s['words']; loc=s.get('locals',{})
 assert f.get('0xf318')==2
 assert (loc.get('0x5225')==1 or f.get('0x5225')==1)
@@ -232,5 +236,367 @@ assert (loc.get('0x729a')==867 or w.get('0x729a')==867)
 assert w.get('0xcae8')==1
 PY
 rm -rf "$billard_dir"
+
+# Native-verified route 2: fireplace, wine cellar, library, billiards, and the
+# lit candle. Assert the step-scoped responses and state transitions that were
+# read from DOSBox-X frames; the full evidence is in route2_v8_dos/.
+route2_dir=$(mktemp -d)
+"$BIN" play --extracted "$EXTRACTED" --script "$ROOT/scripts/route2_de.txt" \
+  --trace-file "$route2_dir/t.ndjson" >/dev/null
+python3 - "$route2_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 50, len(by_step)
+
+def response(step):
+    return by_step[step]['response']
+
+def state(step):
+    return by_step[step]['state']
+
+# OBNINT gates are one-based object ids; id 178 holds the petroleum and id 147
+# is the petroleum noun. This is the guard for overlay unit 11 group 61.
+r = by_step[24]
+s = r['state']
+assert s['object'] == 145 and s['object2'] == 147, (s['object'], s['object2'])
+assert s['flags'].get('0xf309') == 1
+assert s['flags'].get('0xf30a') == 1
+assert s['words'].get('0xcae8') == 1
+assert response(24) == [
+    'Na, ob das funktionieren wird? Gut - probieren',
+    "wir's. Gluckgluck... stop! Das Feuerzeug ist",
+    'schon voll!',
+], response(24)
+
+assert response(43) == [
+    'In der Bibliothek',
+    'Hier gibt es zwei Türen: eine zum Billardzimmer',
+    'und eine zur Eingangshalle hin.',
+], response(43)
+assert response(44) == [
+    'Bssssmmmm....! Eine dicke Stubenfliege brummt',
+    'vorbei.',
+    'In der Eingangshalle',
+    'Von der Decke hängt ein vielarmiger Kristallüster',
+    'herab.',
+], response(44)
+assert response(45)[0] == 'In diesem Moment donnern von außen plötzlich'
+assert response(45)[-1] == '- TASTE -'
+assert response(46)[0] == 'Mitten auf dem Boden liegt ein Zettel.'
+assert response(46)[1] == 'Vorsiiiicht....... Rrrrrrruummssss!!!!! Mit'
+assert response(46)[-1].endswith('heimsen die Punkte ein! Jaja!')
+assert state(46)['score'] == 32
+assert response(47) == [
+    'Ein Jammer! Die Kerzen haben den Sturz nur in',
+    'pulverisierter Form überstanden. Aber... halt! Da',
+    'liegt noch eine, die einigermaßen heil geblieben',
+    'ist!',
+    'Sie haben die Kerze genommen.',
+], response(47)
+assert response(48) == ['Rrrrrtsch! Das Feuerzeug brennt.'], response(48)
+assert state(48)['flags'].get('0xf309') == 2
+assert response(49) == [
+    'Mitten auf dem Boden liegt ein Zettel.',
+    'Fein. Ihre Kerze brennt jetzt.',
+], response(49)
+assert response(50) == [
+    'Punkte: 32',
+    'Züge: 50',
+    'Das Feuerzeug ist wieder aus...',
+    'Bssssmmmm....! Eine dicke Stubenfliege brummt',
+    'vorbei.',
+    'Bitte schauen Sie auf die Statuszeile.',
+], response(50)
+final = state(50)
+assert final['room'] == 1 and final['moves'] == 50 and final['score'] == 32
+assert final['inventory'] == [
+    'feuerzeug', 'umschlag', 'klinge', 'billardstock', 'hanfseil', 'kerze',
+], final['inventory']
+assert final['flags'].get('0xf309') == 1
+assert final['flags'].get('0xf30a') == 1
+PY
+rm -rf "$route2_dir"
+
+# Native-verified route 3: the fireplace passage, wine cellar, Rumpelkammer,
+# and the Enterhaken combine. Evidence: route3_v1_dos/parity-report.json and
+# the direct OCR of steps/0007.png and steps/0008.png.
+route3_dir=$(mktemp -d)
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route2_lit_candle.json" \
+  --script "$ROOT/scripts/route3_de.txt" \
+  --trace-file "$route3_dir/t.ndjson" >/dev/null
+python3 - "$route3_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 8, len(by_step)
+
+assert by_step[1]['response'][0] == 'Im Kamin'
+assert by_step[3]['response'][0] == 'Im Weinkeller'
+assert by_step[4]['state']['room'] == 15
+assert by_step[4]['response'] == ['Du gehst westen.'], by_step[4]['response']
+assert by_step[5]['response'][0] == 'Schaun wir mal... hoppla! Du lieber Himmel, der'
+assert by_step[6]['response'] == ['Sie haben haken genommen.'], by_step[6]['response']
+assert by_step[7]['response'] == [
+    'Sie haben sich eine Art Enterhaken gebastelt. Der',
+    'Haken ist am Schaft befestigt. Das Ganze ist',
+    'ungefähr 60 Zentimeter lang.',
+], by_step[7]['response']
+assert 'haken' in by_step[7]['state']['inventory']
+assert by_step[8]['response'] == [
+    'Punkte: 36',
+    'Züge: 58',
+    'Bitte schauen Sie auf die Statuszeile.',
+], by_step[8]['response']
+final = by_step[8]['state']
+assert final['room'] == 15 and final['moves'] == 58 and final['score'] == 36
+PY
+rm -rf "$route3_dir"
+
+# Native-verified route 4: kitchen table, staged Falltür, and the attic entry.
+# Evidence: /tmp/opencode/route4_v27_dos/parity-report.json and the direct
+# 400% OCR of steps/0015.png and steps/0016.png.
+route4_dir=$(mktemp -d)
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route3_enterhaken.json" \
+  --script "$ROOT/scripts/route4_de.txt" \
+  --trace-file "$route4_dir/t.ndjson" >/dev/null
+python3 - "$route4_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 16, len(by_step)
+
+def response(step):
+    return by_step[step]['response']
+
+def state(step):
+    return by_step[step]['state']
+
+assert response(7) == [
+    'Auf dem Küchentisch',
+    'Sie stehen jetzt auf dem Küchentisch. Fein. Aber',
+    'wenn Sie wirkliche Größe erreichen wollen, müssen',
+    'sie sich noch mehr anstrengen. Und auf eine',
+    'andere Art!',
+], response(7)
+assert response(9) == ['Sie sind wieder vom Tisch herunten.'], response(9)
+assert response(10) == [
+    'Gut. Dann Hau... und Ruck... und eins und zwei...',
+    'geschafft!',
+], response(10)
+assert response(11) == ['In diese Richtung führt kein Weg.*'], response(11)
+assert response(12) == [
+    'Ah - sieh an! Unsere unfehlbare Kombinationsgabe',
+    'sagt uns, daß Sie etwas vorhaben! Wir wissen zwar',
+    'noch nicht genau was, aber wir bleiben am',
+    'Apparat! Gut. Der Küchentisch steht nun unter der',
+    'Falltüre.',
+], response(12)
+assert response(14) == [
+    'Damit wird es gehen. Dann ziehen wir mal an dem',
+    'Riegel... vorsicht... die Falltür schwingt',
+    'herunter! Ein schwarzes Viereck hat sich über',
+    'Ihnen aufgetan.',
+], response(14)
+s = state(14)
+assert s['room'] == 6 and s['moves'] == 72
+assert s['flags'].get('0x5283') == 1
+assert s['flags'].get('0xf31c') == 1
+assert s['flags'].get('0xf32c') == 1
+assert s['flags'].get('0xf2f7') in (None, 0)  # zero-valued flags are omitted from traces
+assert s['words'].get('0x4724') == 65535
+assert s['words'].get('0xcae8') == 1
+
+assert response(15) == [
+    'Ihre Kerze verbreitet einen flackernden Lichtschein.',
+    'Auf dem Dachboden',
+    'Dies ist ein großer, L-förmiger Raum direkt unter',
+    'dem Dachgebälk. Von hier aus kann man durch eine',
+    'Falltüre hinab in den oberen Flur gelangen, oder',
+    'nach Westen in den Speicher - den anderen Raum',
+    'unter dem Hausdach. Hier, auf dem Dachboden',
+    'selbst, stehen ein paar Kisten herum, ein altes',
+    'Bettgestell aus Messing und ein großer,',
+    'altertümlicher Kleiderschrank.',
+], response(15)
+s = state(15)
+assert s['room'] == 12 and s['moves'] == 73 and s['score'] == 41
+assert s['flags'].get('0xf31c') in (None, 0)  # cleared table state is omitted
+assert response(16) == [
+    'Punkte: 41',
+    'Züge: 74',
+    'Bitte schauen Sie auf die Statuszeile.',
+], response(16)
+final = state(16)
+assert final['room'] == 12 and final['moves'] == 74 and final['score'] == 41
+assert 'fliegenfänger' in final['inventory']
+PY
+rm -rf "$route4_dir"
+
+# Native-verified `lege Zucker in Glas` in the kitchen (route5_sugar_jar_dos):
+# the verb-2 handler stores signed -314 in the live OBNINT word 0x476e and
+# prints the jar's visible name rather than the parsed "innenraum" noun.
+sugar_dir=$(mktemp -d)
+cat > "$sugar_dir/in.txt" <<'TXT'
+gehe nach westen
+öffne Schublade
+nimm Zucker
+öffne Glas
+lege Zucker in Glas
+quit
+TXT
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route4_dachboden.json" \
+  --script "$sugar_dir/in.txt" --trace-file "$sugar_dir/t.ndjson" >/dev/null
+python3 - "$sugar_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 6, len(by_step)
+r = by_step[5]
+assert r['response'] == [
+    'Der Würfelzucker befindet sich nun in dem Marmeladenglas.'
+], r['response']
+s = r['state']
+assert s['room'] == 13 and s['moves'] == 79
+assert s['words'].get('0x476e') == 65222, s['words'].get('0x476e')
+assert 'würfelzucker' not in s['inventory']
+PY
+rm -rf "$sugar_dir"
+
+# Native-verified bedroom/bath extension (route5_fly14b_dos, 21/21 commands).
+# The dropped Marmeladenglas resolves from bare "Glas" in room 8; its state byte
+# is the same OBNBYT entry as 0x5f1e, and the failed fly take has one line only.
+fly_dir=$(mktemp -d)
+cat > "$fly_dir/in.txt" <<'TXT'
+gehe nach osten
+gehe runter
+gehe nach süden
+öffne die Tür zum Schlafzimmer
+gehe nach westen
+klettere Himmelbett
+springe Bett
+nimm Tuch
+schaue auf Tuch
+gehe nach norden
+gehe nach norden
+lege Glas
+warte
+warte
+warte
+schließe Glas
+warte
+warte
+warte
+öffne Glas
+nimm Stubenfliege
+quit
+TXT
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route5_sugar.json" \
+  --script "$fly_dir/in.txt" --trace-file "$fly_dir/t.ndjson" >/dev/null
+python3 - "$fly_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 22, len(by_step)
+assert by_step[12]['response'] == [
+    'marmeladenglas liegt jetzt hier auf dem Boden.'
+], by_step[12]['response']
+assert by_step[16]['response'] == ['Das Marmeladenglas ist jetzt zu.'], by_step[16]['response']
+assert by_step[16]['state']['flags'].get('0x5f1e') == 1
+assert by_step[20]['response'] == [
+    'Aha - da war wohl mal Himbeermarmelade drin! Ein',
+    'paar Reste verströmen noch immer den einstigen',
+    'Duft selbsteingekochter Marmelade.',
+    'Das Marmeladenglas ist jetzt offen.',
+], by_step[20]['response']
+assert by_step[20]['state']['flags'].get('0x5f1e', 0) == 0
+assert by_step[21]['response'] == [
+    'ein Objekt "stubenfliege" befindet sich nicht an diesem Ort.'
+], by_step[21]['response']
+final = by_step[21]['state']
+assert final['room'] == 8 and final['moves'] == 103 and final['score'] == 60
+assert 'plüschtuch' in final['inventory']
+PY
+rm -rf "$fly_dir"
+
+# Native-verified web/brush continuation (bath_web_without_lure_v3_dos, 2/2
+# commands). Bare `Netz` resolves to the room-8 spinnennetz, and destroying it
+# advances the 0xf323 state machine so the old toothbrush becomes takeable.
+web_dir=$(mktemp -d)
+cat > "$web_dir/in.txt" <<'TXT'
+zerstöre Netz
+nimm Bürste
+quit
+TXT
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route5_bathroom.json" \
+  --script "$web_dir/in.txt" --trace-file "$web_dir/t.ndjson" >/dev/null
+python3 - "$web_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 3, len(by_step)
+assert by_step[1]['response'] == [
+    'Okay. Das Spinnennetz ist jetzt kaputt. Es',
+    'scheint, als träfe Sie von irgendwoher ein höchst',
+    'feindseliger Blick.',
+], by_step[1]['response']
+s = by_step[1]['state']
+assert s['room'] == 8 and s['moves'] == 104 and s['score'] == 60
+assert s['object'] == 303 and s['flags'].get('0xf323') == 2
+assert by_step[2]['response'] == ['Gut. Die alte Zahnbürste gehört nun Ihnen.']
+s = by_step[2]['state']
+assert s['room'] == 8 and s['moves'] == 105 and s['score'] == 70
+assert s['object'] == 131 and 'zahnbürste' in s['inventory']
+PY
+rm -rf "$web_dir"
+
+# Native-verified library/tube continuation
+# (to_library_open_tube_v3_dos, 6/6 commands). The tube starts closed and its
+# state line takes the definite article in the original German parser.
+tube_dir=$(mktemp -d)
+cat > "$tube_dir/in.txt" <<'TXT'
+gehe nach süden
+gehe nach osten
+gehe nach norden
+gehe runter
+gehe nach osten
+öffne Tube
+quit
+TXT
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route5_bathroom.json" \
+  --script "$tube_dir/in.txt" --trace-file "$tube_dir/t.ndjson" >/dev/null
+python3 - "$tube_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert len(by_step) == 7, len(by_step)
+assert by_step[6]['response'] == ['Die Tube ist jetzt offen.'], by_step[6]['response']
+s = by_step[6]['state']
+assert s['room'] == 2 and s['moves'] == 109 and s['score'] == 65
+assert s['object'] == 321
+# The open action clears OBNBYT id 321 to zero; zero-valued flags are omitted
+# from the trace, so the "jetzt offen" response above is the state evidence.
+PY
+rm -rf "$tube_dir"
+
+# Native after_brush_take_fly: bare `Fliege` prefix-matches the already-owned
+# Fliegenfänger instead of the full Stubenfliege noun.
+fly_token_dir=$(mktemp -d)
+cat > "$fly_token_dir/in.txt" <<'TXT'
+zerstöre Netz
+nimm Bürste
+nimm Fliege
+quit
+TXT
+"$BIN" play --extracted "$EXTRACTED" --load "$ROOT/saves/route5_bathroom.json" \
+  --script "$fly_token_dir/in.txt" --trace-file "$fly_token_dir/t.ndjson" >/dev/null
+python3 - "$fly_token_dir/t.ndjson" <<'PY'
+import json, sys
+rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+by_step = {r['step']: r for r in rows if r.get('kind') == 'command'}
+assert by_step[3]['response'] == ['den Fliegenfänger haben Sie schon.'], by_step[3]['response']
+assert by_step[3]['state']['object'] == 323
+PY
+rm -rf "$fly_token_dir"
 
 echo 'engine tests passed'

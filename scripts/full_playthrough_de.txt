@@ -1,56 +1,137 @@
-# Hexuma canonical German playthrough (normalized to extracted vocab/engine).
-# Source: /tmp/opencode/Hexuma-walkthrough.txt
-# Feelie-dependent choices are annotated where unresolved.
+# Hexuma canonical German playthrough.
+# Only commands verified against a single kept-open DOSBox-X session belong
+# here. The first 50 commands reach the lit candle in the entrance hall:
+# room 1, moves 50, score 32/1617, candle lit. The next 8 commands build the
+# Enterhaken in the Rumpelkammer: room 15, moves 58, score 36/1617. The next
+# 16 reach the Dachboden: room 12, moves 74, score 41/1617.
+# Evidence: /tmp/opencode/route2_v8_dos/parity-report.json,
+# /tmp/opencode/route3_v1_dos/parity-report.json,
+# /tmp/opencode/route4_v27_dos/parity-report.json, and the direct step-scoped
+# OCR frames under each run's steps/ directory.
 
 # Kapitel 1: Hawthorne-Haus
 warte
 warte
 warte
 warte
-öffne haustüre
+öffne die tür zum gesellschaftszimmer
+gehe nach westen
+nimm feuerzeug
+gehe nach osten
+öffne die haustür
 nimm umschlag
 nein
 nein
-öffne umschlag
-nimm edelsteinsplitter
-gehe osten
+schließe die haustür
+schließe den riegel
+schließe die tür zum gesellschaftszimmer
+gehe in kamin
+score
+schaue
+drücke mauerstein
+runter
+score
+nimm Flasche von 1896
+öffne Flasche
+fülle Feuerzeug mit Petroleum
+gehe nach rauf
+gehe nach süden
+öffne die tür zur bibliothek
+gehe nach osten
 nimm samuraischwert
 nimm klinge
-warte
-gehe westen
-untersuche kreatur
-# back to house after monster
-gehe osten
-öffne türe
-gehe norden
-
-# Kapitel 1: Billardzimmer
-nimm billardstock
-spiele billard
-nein
-lege billardstock
-nimm billardstock
-untersuche billardstock
-lege billardstock
-nimm billardstock
-untersuche billardstock
-zerlege billardstock
-zerlege billardstock
-befestige klinge am griff
-gehe süden
-gehe westen
+öffne die tür zum billardzimmer
+gehe nach norden
+score
+nimm stock
+lege stock
+nimm stock
+lege stock
+nimm stock
+zerlege stock
+zerlege stock
+verbinde griff mit klinge
+score
+gehe nach süden
+gehe nach westen
 zerschneide seil
-nimm kerze
 nimm seil
-öffne türe
-gehe westen
-nimm feuerzeug
-gehe osten
-gehe osten
-betrete kamin
-untersuche boden
-nimm ruß
+nimm kerze
+entzünde feuerzeug
+entzünde kerze
+score
+gehe in kamin
 drücke mauerstein
+runter
+gehe nach westen
+nimm gartenhacke
+nimm haken
+verbinde haken mit schaft
+score
+
+# Kapitel 2: Küche, Falltür und Dachboden
+# Native parity: /tmp/opencode/route4_v27_dos/parity-report.json.
+gehe nach osten
+gehe nach rauf
+gehe nach süden
+gehe nach rauf
+öffne die tür zur küche
+gehe nach osten
+öffne Besteckschublade
+nimm Tube
+nimm Glas
+klettere auf Tisch
+nimm Fliegenfänger
+runter
+schiebe Tisch nach Westen
+gehe nach Westen
+schiebe Tisch unter die Falltür
+klettere auf Tisch
+ziehe Falltür mit Haken
+rauf
+score
+
+# Kapitel 3: Dachboden, Kammer und Küchenvorräte
+# Native parity: /tmp/opencode/route5_sugar_jar_dos/parity-report.json.
+gehe nach westen
+öffne Schublade
+nimm Zucker
+öffne Glas
+lege Zucker in Glas
+
+# Kapitel 4: Schlafzimmer und Badezimmer
+# Native parity: /tmp/opencode/route5_fly14b_dos/parity-report.json,
+# replaying the 82-command verified prefix in one kept-open DOSBox-X;
+# all 21 extension commands passed typed-input OCR verification.
+gehe nach osten
 gehe runter
-untersuche flaschen
-untersuche etiketten
+gehe nach süden
+öffne die Tür zum Schlafzimmer
+gehe nach westen
+klettere Himmelbett
+springe Bett
+nimm Tuch
+schaue auf Tuch
+gehe nach norden
+gehe nach norden
+lege Glas
+warte
+warte
+warte
+schließe Glas
+warte
+warte
+warte
+öffne Glas
+nimm Stubenfliege
+zerstöre Netz
+nimm Bürste
+
+# Kapitel 5: Bibliothek (Wachs und Lappen)
+# Native parity: /tmp/opencode/to_library_open_tube_v3_dos/parity-report.json.
+gehe nach süden
+gehe nach osten
+gehe nach norden
+gehe runter
+gehe nach osten
+öffne Tube

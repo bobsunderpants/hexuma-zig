@@ -11,6 +11,9 @@ pub const Context = struct {
     read_flag: *const fn (*anyopaque, i64) i64,
     write_flag: *const fn (*anyopaque, i64, i64) void,
     message: *const fn (*anyopaque, i64) []const u8,
+    /// Optional diagnostics for contexts that need per-unit/group scoping.
+    set_unit: ?*const fn (*anyopaque, i64) void = null,
+    set_group: ?*const fn (*anyopaque, i64) void = null,
 };
 
 pub const Result = struct {
@@ -36,6 +39,7 @@ pub fn run(allocator: std.mem.Allocator, db: rules.Database, context: Context, r
         // timer/state rules that apply beyond its nominal 17,26 room ranges.
         const should_run = unit.containsRoom(room) or unit.unit == 11;
         if (!should_run) continue;
+        if (context.set_unit) |set_unit| set_unit(context.ptr, unit.unit);
         const unit_result = try runUnit(allocator, unit, context);
         ran_any = true;
         try result.message_ids.appendSlice(allocator, unit_result.message_ids.items);
@@ -64,6 +68,7 @@ pub fn runUnit(allocator: std.mem.Allocator, unit: rules.Unit, context: Context)
     for (unit.rules) |rule| {
         if (current_group == null or current_group.? != rule.group) {
             current_group = rule.group;
+            if (context.set_group) |set_group| set_group(context.ptr, rule.group);
             group_enabled = evalExpr(context, rule.when) != 0;
         }
         if (!group_enabled) continue;

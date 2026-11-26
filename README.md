@@ -54,9 +54,9 @@ In this environment Zig was downloaded locally, so the equivalent command is:
 ./zig-out/bin/hexuma play --choices
 ./zig-out/bin/hexuma play --lang en --choices
 
-# Portable JSON save state (the original save format is not reconstructed)
-./zig-out/bin/hexuma play --save game.sav
-./zig-out/bin/hexuma play --load game.sav
+# Portable JSON save state (use .json; .sav/.dat select the original format)
+./zig-out/bin/hexuma play --save game.json
+./zig-out/bin/hexuma play --load game.json
 
 # True point-and-click X11 window (buttons map to the same action executor)
 ./zig-out/bin/hexuma gui --lang en

@@ -1,0 +1,16 @@
+gehe nach osten
+gehe nach rauf
+gehe nach süden
+gehe nach rauf
+öffne die tür zur küche
+gehe nach osten
+klettere auf Tisch
+nimm Fliegenfänger
+runter
+schiebe Tisch nach Westen
+gehe nach Westen
+schiebe Tisch unter die Falltür
+klettere auf Tisch
+ziehe Falltür mit Haken
+rauf
+score

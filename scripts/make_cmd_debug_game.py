@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Build a copy of HEXPRG.EXE that dumps fly globals on every command."""
+from __future__ import annotations
+
+import shutil
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCE = Path("/home/bob/Downloads/Hexuma")
+DEST = ROOT / ".tmp_cmd_debug_game"
+
+HEADER = 0x6600
+PATCH_SEG = 0x0000
+PATCH_OFF = 0x84F5
+CAVE_SEG = 0xC89
+CAVE_OFF = 0xD24D
+CAVE_LEN = 131
+ORIGINAL = bytes.fromhex("a01bbe3cb8")
+
+
+def file_offset(segment: int, offset: int) -> int:
+    return HEADER + segment * 16 + offset
+
+
+def main() -> int:
+    if DEST.exists():
+        shutil.rmtree(DEST)
+    shutil.copytree(SOURCE, DEST)
+
+    asm = ROOT / "scripts" / "fly_debug_routine.s"
+    obj = ROOT / ".fly_debug.o"
+    raw = ROOT / ".fly_debug.bin"
+    subprocess.run(["as", "--32", "-o", str(obj), str(asm)], check=True)
+    subprocess.run(["objcopy", "-O", "binary", "--only-section=.text", str(obj), str(raw)], check=True)
+    routine = bytearray(raw.read_bytes())
+    routine.extend(ORIGINAL)
+    routine.append(0xCB)  # retf
+    if len(routine) > CAVE_LEN:
+        raise SystemExit(f"debug routine too large: {len(routine)}")
+
+    exe = DEST / "HEXPRG.EXE"
+    data = bytearray(exe.read_bytes())
+
+    patch_at = file_offset(PATCH_SEG, PATCH_OFF)
+    if bytes(data[patch_at:patch_at + len(ORIGINAL)]) != ORIGINAL:
+        raise SystemExit(f"unexpected prologue bytes: {bytes(data[patch_at:patch_at + len(ORIGINAL)]).hex()}")
+
+    far_call = bytes([0x9A]) + CAVE_OFF.to_bytes(2, "little") + CAVE_SEG.to_bytes(2, "little")
+    patch = far_call + b"\x90" * (len(ORIGINAL) - len(far_call))
+    data[patch_at:patch_at + len(ORIGINAL)] = patch
+
+    reloc_offset = PATCH_OFF + 3
+    reloc_at = struct.unpack_from("<H", data, 0x18)[0]
+    reloc_count = struct.unpack_from("<H", data, 0x06)[0]
+    entry_at = reloc_at + 4 * reloc_count
+    if entry_at + 4 > HEADER:
+        raise SystemExit(f"no relocation-table slack at {entry_at:x}")
+    struct.pack_into("<HH", data, entry_at, reloc_offset, PATCH_SEG)
+    struct.pack_into("<H", data, 0x06, reloc_count + 1)
+
+    cave_at = file_offset(CAVE_SEG, CAVE_OFF)
+    if any(data[cave_at:cave_at + len(routine)]):
+        raise SystemExit("debug routine cave is not zero-filled")
+    data[cave_at:cave_at + len(routine)] = routine
+    exe.write_bytes(data)
+    print(f"patched {exe} ({len(routine)} debug bytes, reloc {reloc_offset:x}:{PATCH_SEG:x})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

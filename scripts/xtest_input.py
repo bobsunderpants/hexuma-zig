@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import subprocess
 import sys
 import time
 
@@ -78,6 +79,16 @@ xtst.XTestFakeButtonEvent.argtypes = [DisplayPtr, ctypes.c_uint, Bool, ctypes.c_
 RevertToParent = 2
 CurrentTime = 0
 SubstructureRedirectMask = 1 << 20
+
+# Prevent Xlib default handler from terminating the process on stale window IDs.
+@ctypes.CFUNCTYPE(ctypes.c_int, DisplayPtr, ctypes.c_void_p)
+def _ignore_x_error(_display, _event):
+    return 0
+
+try:
+    x11.XSetErrorHandler(_ignore_x_error)
+except Exception:
+    pass
 SubstructureNotifyMask = 1 << 19
 
 TRANSLIT = {
@@ -238,22 +249,91 @@ class XTestClient:
         self.close()
 
     def _focus_is_target(self, focused: int, target: int) -> bool:
-        if focused == target:
-            return True
-        root = Window()
-        parent = Window()
-        children_ptr = ctypes.POINTER(Window)()
-        count = ctypes.c_uint()
-        if not x11.XQueryTree(
-            self.display, target, ctypes.byref(root), ctypes.byref(parent),
-            ctypes.byref(children_ptr), ctypes.byref(count),
-        ):
-            return False
-        try:
-            return any(children_ptr[i] == focused for i in range(count.value))
-        finally:
+        # SDL2 may put the X input focus on an inner drawable rather than on
+        # the top-level window returned by the WM. Accept any descendant of
+        # the target, but still reject unrelated windows.
+        pending = [target]
+        seen: set[int] = set()
+        for _ in range(32):
+            if not pending:
+                return False
+            current = pending.pop()
+            if current == focused:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            root = Window()
+            parent = Window()
+            children_ptr = ctypes.POINTER(Window)()
+            count = ctypes.c_uint()
+            if not x11.XQueryTree(
+                self.display, current, ctypes.byref(root), ctypes.byref(parent),
+                ctypes.byref(children_ptr), ctypes.byref(count),
+            ):
+                continue
+            children = [children_ptr[i] for i in range(count.value)]
             if children_ptr:
                 x11.XFree(ctypes.cast(children_ptr, ctypes.c_void_p))
+            if focused in children:
+                return True
+            pending.extend(children)
+        return False
+
+    def _window_geometry(self, window: int) -> tuple[int, int, int, int]:
+        # XGetGeometry reports coordinates relative to the window's parent,
+        # while XTest events use root coordinates. Translate explicitly.
+        root_x = ctypes.c_int()
+        root_y = ctypes.c_int()
+        child = Window()
+        x11.XTranslateCoordinates(
+            self.display, window, x11.XDefaultRootWindow(self.display), 0, 0,
+            ctypes.byref(root_x), ctypes.byref(root_y), ctypes.byref(child),
+        )
+        child_window = Window()
+        rel_x = ctypes.c_int()
+        rel_y = ctypes.c_int()
+        x11.XGetGeometry(self.display, window, ctypes.byref(child_window),
+                         ctypes.byref(rel_x), ctypes.byref(rel_y),
+                         ctypes.byref(w := ctypes.c_uint()),
+                         ctypes.byref(h := ctypes.c_uint()),
+                         ctypes.byref(bd := ctypes.c_uint()),
+                         ctypes.byref(depth := ctypes.c_uint()))
+        return root_x.value, root_y.value, w.value, h.value
+
+    def _click(self, x: int, y: int) -> None:
+        xtst.XTestFakeMotionEvent(self.display, -1, x, y, CurrentTime)
+        x11.XFlush(self.display)
+        time.sleep(0.05)
+        xtst.XTestFakeButtonEvent(self.display, 1, True, CurrentTime)
+        x11.XFlush(self.display)
+        time.sleep(0.05)
+        xtst.XTestFakeButtonEvent(self.display, 1, False, CurrentTime)
+        x11.XFlush(self.display)
+        time.sleep(0.1)
+
+    def click_focus(self, window: int) -> None:
+        """Send a real XTest click to the center of a window.
+
+        DOSBox-X occasionally stalls before SDL video init until its startup
+        window receives an event, and KDE can refuse _NET_ACTIVE_WINDOW. A
+        real click unblocks both paths without weakening input verification.
+        """
+        x, y, w, h = self._window_geometry(window)
+        self._click(x + w // 2, y + h // 2)
+
+    def click_titlebar_focus(self, window: int) -> None:
+        """Click the decorated frame above the client area to focus a window.
+
+        KDE can keep input focus on the terminal even after a successful
+        _NET_ACTIVE_WINDOW/XSetInputFocus sequence. A click on the title bar is
+        accepted by the window manager without sending a click into the game.
+        """
+        x, y, w, _ = self._window_geometry(window)
+        title_y = y - 6
+        if title_y < 0:
+            title_y = max(0, y)
+        self._click(x + w // 2, title_y)
 
     def activate(self, window: int, strict: bool = True, retries: int = 5) -> bool:
         event_buf = ctypes.create_string_buffer(192)
@@ -264,14 +344,19 @@ class XTestClient:
         event.format = 32
         event.data[0] = 1  # request from normal application
         event.data[1] = CurrentTime
+        focused = Window(0)
         for _ in range(retries):
-            x11.XSendEvent(
-                self.display, x11.XDefaultRootWindow(self.display), False,
-                SubstructureRedirectMask | SubstructureNotifyMask, event_buf,
-            )
-            x11.XSetInputFocus(self.display, window, RevertToParent, CurrentTime)
-            x11.XRaiseWindow(self.display, window)
-            x11.XFlush(self.display)
+            try:
+                x11.XSendEvent(
+                    self.display, x11.XDefaultRootWindow(self.display), False,
+                    SubstructureRedirectMask | SubstructureNotifyMask, event_buf,
+                )
+                x11.XSetInputFocus(self.display, window, RevertToParent, CurrentTime)
+                x11.XRaiseWindow(self.display, window)
+                x11.XFlush(self.display)
+            except Exception:
+                time.sleep(0.08)
+                continue
             time.sleep(0.08)
             focused = Window()
             revert = ctypes.c_int()
@@ -280,8 +365,43 @@ class XTestClient:
                 return True
             if not strict:
                 return True
+        # KDE may refuse _NET_ACTIVE_WINDOW for the transient 640x400 startup
+        # window or may steal focus back after a screenshot. Ask xdotool to
+        # activate/focus the exact window first; this uses the WM protocol and
+        # does not inject game input. The strict focus check below still runs.
+        try:
+            wid_hex = hex(window)
+            subprocess.run(["xdotool", "windowactivate", "--sync", wid_hex],
+                           check=True, timeout=3, capture_output=True)
+            subprocess.run(["xdotool", "windowfocus", "--sync", wid_hex],
+                           check=True, timeout=3, capture_output=True)
+            x11.XFlush(self.display)
+            time.sleep(0.1)
+            focused = Window()
+            revert = ctypes.c_int()
+            x11.XGetInputFocus(self.display, ctypes.byref(focused), ctypes.byref(revert))
+            if self._focus_is_target(focused.value, window):
+                return True
+        except Exception:
+            pass
+        # If xdotool is unavailable or the WM still refuses, click the frame.
+        # A title-bar click is accepted by the WM without touching game input;
+        # for undecorated windows, fall back to a real client-area click.
+        for click in (self.click_titlebar_focus, self.click_focus):
+            try:
+                click(window)
+            except Exception:
+                continue
+            try:
+                focused = Window()
+                revert = ctypes.c_int()
+                x11.XGetInputFocus(self.display, ctypes.byref(focused), ctypes.byref(revert))
+                if self._focus_is_target(focused.value, window):
+                    return True
+            except Exception:
+                pass
         raise RuntimeError(
-            f"X input focus is 0x{focused.value:x}, wanted 0x{window:x}"
+            f"X input focus is 0x{getattr(focused, 'value', 0):x}, wanted 0x{window:x}"
         )
 
     def keysym_for(self, token: str) -> int:

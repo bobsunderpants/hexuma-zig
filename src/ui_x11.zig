@@ -80,7 +80,9 @@ const WindowUi = struct {
         if (bytes.len >= 14 and std.mem.eql(u8, bytes[0..6], "HXRAW2")) {
             x = std.mem.readInt(u16, bytes[6..8], .little);
             y = std.mem.readInt(u16, bytes[8..10], .little);
-            offset = 14;
+            // HXRAW2 is "magic,x,y,w,h,pixels": width and height live at
+            // bytes 10..13, while HXRAW1 stores only "magic,w,h,pixels".
+            offset = 10;
         } else if (bytes.len >= 10 and std.mem.eql(u8, bytes[0..6], "HXRAW1")) {
             offset = 10;
         } else return null;

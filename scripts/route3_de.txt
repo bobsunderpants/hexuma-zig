@@ -1,0 +1,8 @@
+gehe in kamin
+drücke mauerstein
+runter
+gehe nach westen
+nimm gartenhacke
+nimm haken
+verbinde haken mit schaft
+score
